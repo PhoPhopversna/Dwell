@@ -1,0 +1,31 @@
+server:
+  port: 8083
+spring:
+  application:
+    name: identity-service
+  datasource:
+    url: jdbc:postgresql://localhost:5432/gateway
+    username: tixly-ticket
+    password: tixly123
+  jpa:
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+
+
+#management:
+#  endpoints:
+#    web:
+#      exposure:
+#        include: refresh,health,info,gateway,env
+#
+## Optional: logging for debugging
+#logging:
+#  level:
+#    root: INFO
+#    org.springframework.web: DEBUG
+#  pattern:
+#    console: "%d{yyyy-MM-dd HH:mm:ss} [%X{correlationId}] %-5level %logger - %msg%n"
