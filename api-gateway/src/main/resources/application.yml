@@ -1,0 +1,63 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: api-gateway
+  r2dbc:
+    url: r2dbc:postgresql://localhost:5432/gateway
+    username: tixly-ticket
+    password: tixly123
+  sql:
+    init:
+      mode: always
+
+  # Redis configuration - explicitly disable repositories
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      repositories:
+        enabled: false
+
+  cloud:
+    gateway:
+      discovery:
+        locator:
+          enabled: false
+
+#      default-filters:
+#        - name: RequestRateLimiter
+#          args:
+#            redis-rate-limiter.replenishRate: 10
+#            redis-rate-limiter.burstCapacity: 20
+#            key-resolver: "#{@ipKeyResolver}"
+
+      routes:
+        - id: health-check
+          uri: http://localhost:8081
+          predicates:
+            - Path=/health
+          filters:
+            - StripPrefix=1
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: http://localhost:8080/realms/rizz-realm/protocol/openid-connect/certs
+          issuer-uri: http://localhost:8080/realms/rizz-realm
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: refresh,health,info,gateway,env
+
+# Optional: logging for debugging
+logging:
+  level:
+    root: INFO
+    org.springframework.web: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%X{correlationId}] %-5level %logger - %msg%n"
