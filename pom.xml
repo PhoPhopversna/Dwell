@@ -19,7 +19,8 @@
 
 	<modules>
 		<module>api-gateway</module>
-	</modules>
+        <module>identity</module>
+    </modules>
 
 	<properties>
 		<java.version>21</java.version>
