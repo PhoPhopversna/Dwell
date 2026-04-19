@@ -1,17 +1,17 @@
 package com.neo.repository;
 
 import com.neo.entity.ApiRoute;
+import java.time.LocalDateTime;
 import org.springframework.data.r2dbc.repository.Query;
 import org.springframework.data.r2dbc.repository.R2dbcRepository;
 import org.springframework.stereotype.Repository;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.time.LocalDateTime;
-
 @Repository
 public interface RouteRepository extends R2dbcRepository<ApiRoute, Long> {
   Mono<ApiRoute> findById(Long routeId);
+
   Mono<ApiRoute> findFirstById(Long routeId);
 
   Flux<ApiRoute> findAll();

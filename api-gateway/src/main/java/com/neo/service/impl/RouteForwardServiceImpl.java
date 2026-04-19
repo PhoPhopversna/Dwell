@@ -2,6 +2,7 @@ package com.neo.service.impl;
 
 import com.neo.entity.ApiRoute;
 import com.neo.repository.RouteRepository;
+import java.util.Map;
 import org.springframework.cloud.gateway.route.Route;
 import org.springframework.cloud.gateway.route.RouteLocator;
 import org.springframework.cloud.gateway.route.builder.BooleanSpec;
@@ -10,8 +11,6 @@ import org.springframework.cloud.gateway.route.builder.PredicateSpec;
 import org.springframework.cloud.gateway.route.builder.RouteLocatorBuilder;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
-
-import java.util.Map;
 
 @Service
 public class RouteForwardServiceImpl implements RouteLocator {

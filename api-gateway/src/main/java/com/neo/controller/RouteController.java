@@ -1,13 +1,13 @@
 package com.neo.controller;
 
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
+import com.neo.dto.ApiResponse;
 import com.neo.dto.RouteRequest;
 import com.neo.dto.RouteResponse;
 import com.neo.service.RouteService;
+import java.util.List;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.web.bind.annotation.*;
+import reactor.core.publisher.Mono;
 
 @RestController
 @RequestMapping("/api/routes")
@@ -16,33 +16,34 @@ public class RouteController {
   @Autowired private RouteService routeService;
 
   @GetMapping
-  public ResponseEntity<Flux<RouteResponse>> getRoutes() {
-    Flux<RouteResponse> routes = routeService.getRoutes();
-    return ResponseEntity.ok(routes);
+  public Mono<ApiResponse<List<RouteResponse>>> getRoutes() {
+    return routeService.getRoutes().collectList().map(routeResponse -> ApiResponse.ok("Successfully", routeResponse));
   }
 
   @GetMapping("/{id}")
-  public ResponseEntity<Mono<RouteResponse>> getRoute(@PathVariable Long id) {
-    Mono<RouteResponse> route = routeService.getRoute(id);
-    return ResponseEntity.ok(route);
+  public Mono<ApiResponse<RouteResponse>> getRoute(@PathVariable Long id) {
+    return routeService
+        .getRoute(id)
+        .map(routeResponse -> ApiResponse.ok("Successfully", routeResponse));
   }
 
   @DeleteMapping("/{id}")
-  public Mono<ResponseEntity<Void>> deleteRoute(@PathVariable Long id) {
-    return routeService.deleteRoute(id)
-            .then(Mono.just(ResponseEntity.noContent().build()));
+  public Mono<ApiResponse<String>> deleteRoute(@PathVariable Long id) {
+    return routeService.deleteRoute(id).then(Mono.just(ApiResponse.ok("Delete Successfully")));
   }
 
   @PostMapping
-  public ResponseEntity<Mono<RouteResponse>> postRoute(@RequestBody RouteRequest routeRequest) {
-    Mono<RouteResponse> route = routeService.saveRoute(routeRequest);
-    return ResponseEntity.ok(route);
+  public Mono<ApiResponse<RouteResponse>> postRoute(@RequestBody RouteRequest routeRequest) {
+    return routeService
+        .saveRoute(routeRequest)
+        .map(routeResponse -> ApiResponse.ok("Successfully", routeResponse));
   }
 
   @PutMapping("/{id}")
-  public ResponseEntity<Mono<RouteResponse>> updateRoute(
+  public Mono<ApiResponse<RouteResponse>> updateRoute(
       @PathVariable Long id, @RequestBody RouteRequest routeRequest) {
-    Mono<RouteResponse> route = routeService.updateRoute(id, routeRequest);
-    return ResponseEntity.ok(route);
+    return routeService
+        .updateRoute(id, routeRequest)
+        .map(routeResponse -> ApiResponse.ok("Successfully", routeResponse));
   }
 }
