@@ -1,21 +1,20 @@
 package com.neo.service.impl;
 
 import com.neo.constant.RouteConstant;
+import com.neo.dto.RouteRequest;
 import com.neo.dto.RouteResponse;
+import com.neo.exception.DataBaseException;
 import com.neo.exception.RouteNotFoundException;
+import com.neo.mapper.RouteMapper;
 import com.neo.repository.RouteRepository;
+import com.neo.service.RouteReloadService;
+import com.neo.service.RouteService;
+import java.time.LocalDateTime;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import com.neo.dto.RouteRequest;
-import com.neo.exception.DataBaseException;
-import com.neo.mapper.RouteMapper;
-import com.neo.service.RouteReloadService;
-import com.neo.service.RouteService;
-
-import java.time.LocalDateTime;
 
 @Slf4j
 @Service
@@ -67,18 +66,23 @@ public class RouteServiceImpl implements RouteService {
 
   @Override
   public Mono<Void> deleteRoute(Long id) {
-      return routeRepository.findFirstById(id)
-              .switchIfEmpty(Mono.error( new RouteNotFoundException(
-                      HttpStatus.NOT_FOUND,
-                      "404",
-                      String.format("Route with id %s is not found", id))))
-              .flatMap(r -> {
-                  System.out.println(r);
-                  return routeRepository.deleteById(r.getId());
-              })
-              .doFinally(signal -> log.info("Signal: {}", signal))
-              .doOnError(e -> log.error("Error: ", e));
+    return routeRepository
+        .findFirstById(id)
+        .switchIfEmpty(
+            Mono.error(
+                new RouteNotFoundException(
+                    HttpStatus.NOT_FOUND,
+                    "404",
+                    String.format("Route with id %s is not found", id))))
+        .flatMap(
+            r -> {
+              System.out.println(r);
+              return routeRepository.deleteById(r.getId());
+            })
+        .doFinally(signal -> log.info("Signal: {}", signal))
+        .doOnError(e -> log.error("Error: ", e));
   }
+
   @Override
   public Mono<RouteResponse> getRoute(Long id) {
     return routeRepository
