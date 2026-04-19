@@ -13,19 +13,36 @@ spring:
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: http://localhost:8080/realms/Dwell/protocol/openid-connect/certs
+          issuer-uri: http://localhost:8080/realms/Dwell
+keycloak:
+  url: ${KEYCLOAK_URL:http://localhost:8080}
+  realm: ${KEYCLOAK_REALM:Dwell}
+  client-id: ${KEYCLOAK_CLIENT_ID:dwell-client}
+  client-secret: ${KEYCLOAK_CLIENT_SECRET:1dKFNJe5JGkrx3NcOQo9I1k7WBflDgh3}
+  admin-username: ${KEYCLOAK_ADMIN_USERNAME:admin}
+  admin-password: ${KEYCLOAK_ADMIN_PASSWORD:admin}
+  admin-client-id: admin-cli
+management:
+  endpoints:
+    web:
+      exposure:
+        include: refresh,health,info,gateway,env
 
-
-
-#management:
-#  endpoints:
-#    web:
-#      exposure:
-#        include: refresh,health,info,gateway,env
-#
-## Optional: logging for debugging
-#logging:
-#  level:
-#    root: INFO
-#    org.springframework.web: DEBUG
-#  pattern:
-#    console: "%d{yyyy-MM-dd HH:mm:ss} [%X{correlationId}] %-5level %logger - %msg%n"
+# Optional: logging for debugging
+logging:
+  level:
+    root: INFO
+    org.springframework.web: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%X{correlationId}] %-5level %logger - %msg%n"
+webclient:
+  timeout:
+    connect: 5000      # 5 seconds
+    response: 7000     # 7 seconds
+    read: 7000
+    write: 7000
