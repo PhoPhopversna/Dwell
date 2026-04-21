@@ -31,16 +31,60 @@ public class KeycloakAuthServiceImpl implements KeycloakAuthService {
 
   @Override
   public TokenResponse login(String username, String password) {
-    return null;
+    log.debug("Attempting login for user: {}", username);
+
+    MultiValueMap<String, String> formData = new LinkedMultiValueMap<>();
+    formData.add("grant_type", "password");
+    formData.add("client_id", keycloakProperties.getClientId());
+    formData.add("client_secret", keycloakProperties.getClientSecret());
+    formData.add("username", username);
+    formData.add("password", password);
+    formData.add("scope", "openid profile email");
+
+    return postToKeycloak(keycloakProperties.getTokenEndpoint(), formData);
   }
 
   @Override
   public TokenResponse refresh(String refreshToken) {
-    return null;
+    log.debug("Refreshing token");
+
+    MultiValueMap<String, String> formData = new LinkedMultiValueMap<>();
+    formData.add("grant_type", "refresh_token");
+    formData.add("client_id", keycloakProperties.getClientId());
+    formData.add("client_secret", keycloakProperties.getClientSecret());
+    formData.add("refresh_token", refreshToken);
+
+    return postToKeycloak(keycloakProperties.getTokenEndpoint(), formData);
   }
 
   @Override
-  public void logout(String refreshToken) {}
+  public void logout(String refreshToken) {
+    log.debug("Logging out user");
+
+    MultiValueMap<String, String> formData = new LinkedMultiValueMap<>();
+    formData.add("client_id", keycloakProperties.getClientId());
+    formData.add("client_secret", keycloakProperties.getClientSecret());
+    formData.add("refresh_token", refreshToken);
+
+    webClient
+        .post()
+        .uri(keycloakProperties.getLogoutEndpoint())
+        .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+        .body(BodyInserters.fromFormData(formData))
+        .retrieve()
+        .onStatus(
+            status -> status.is4xxClientError() || status.is5xxServerError(),
+            response ->
+                response
+                    .bodyToMono(String.class)
+                    .flatMap(
+                        body ->
+                            Mono.error(
+                                new AuthException(
+                                    "Logout failed: " + body, HttpStatus.BAD_REQUEST))))
+        .bodyToMono(Void.class)
+        .block();
+  }
 
   @Override
   public void register(RegisterRequest request) {
