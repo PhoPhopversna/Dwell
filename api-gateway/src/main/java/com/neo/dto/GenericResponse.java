@@ -1,4 +1,4 @@
-package com.neo.exception;
+package com.neo.dto;
 
 import lombok.Getter;
 import lombok.Setter;

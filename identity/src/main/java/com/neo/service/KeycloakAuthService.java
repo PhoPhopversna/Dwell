@@ -2,13 +2,14 @@ package com.neo.service;
 
 import com.neo.dto.RegisterRequest;
 import com.neo.dto.TokenResponse;
+import reactor.core.publisher.Mono;
 
 public interface KeycloakAuthService {
-  public TokenResponse login(String username, String password);
+  public Mono<TokenResponse> login(String username, String password);
 
-  public TokenResponse refresh(String refreshToken);
+  public Mono<TokenResponse> refresh(String refreshToken);
 
-  public void logout(String refreshToken);
+  public Mono<Void> logout(String refreshToken);
 
-  public void register(RegisterRequest request);
+  public Mono<Void> register(RegisterRequest request);
 }
