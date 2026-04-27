@@ -4,11 +4,9 @@ import com.neo.dto.*;
 import com.neo.service.KeycloakAuthService;
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.*;
+import reactor.core.publisher.Mono;
 
 @Slf4j
 @RestController
@@ -22,29 +20,31 @@ public class AuthController {
   }
 
   @PostMapping("/register")
-  public ResponseEntity<ApiResponse<Void>> register(@Valid @RequestBody RegisterRequest request) {
-    log.info("Register");
-    keycloakAuthService.register(request);
-    return ResponseEntity.ok(ApiResponse.ok("Register successfully", null));
+  @ResponseStatus(HttpStatus.CREATED)
+  public Mono<ApiResponse<String>> register(@Valid @RequestBody RegisterRequest request) {
+    return keycloakAuthService
+        .register(request)
+        .then(Mono.just(ApiResponse.ok("Register successfully")));
   }
 
   @PostMapping("/login")
-  public ResponseEntity<ApiResponse<TokenResponse>> login(
-      @Valid @RequestBody LoginRequest request) {
-    TokenResponse tokens = keycloakAuthService.login(request.getUsername(), request.getPassword());
-    return ResponseEntity.ok(ApiResponse.ok("Login successful", tokens));
+  public Mono<ApiResponse<TokenResponse>> login(@Valid @RequestBody LoginRequest request) {
+    return keycloakAuthService
+        .login(request.getUsername(), request.getPassword())
+        .map(tokens -> ApiResponse.ok("Login successful", tokens));
   }
 
   @PostMapping("/refresh")
-  public ResponseEntity<ApiResponse<TokenResponse>> refresh(
-      @Valid @RequestBody RefreshRequest request) {
-    TokenResponse tokens = keycloakAuthService.refresh(request.getRefreshToken());
-    return ResponseEntity.ok(ApiResponse.ok("Token refreshed", tokens));
+  public Mono<ApiResponse<TokenResponse>> refresh(@Valid @RequestBody RefreshRequest request) {
+    return keycloakAuthService
+        .refresh(request.getRefreshToken())
+        .map(tokens -> ApiResponse.ok("Token refreshed", tokens));
   }
 
   @PostMapping("/logout")
-  public ResponseEntity<ApiResponse<Void>> logout(@Valid @RequestBody LogoutRequest request) {
-    keycloakAuthService.logout(request.getRefreshToken());
-    return ResponseEntity.ok(ApiResponse.ok("Logged out successfully", null));
+  public Mono<ApiResponse<Void>> logout(@Valid @RequestBody LogoutRequest request) {
+    return keycloakAuthService
+        .logout(request.getRefreshToken())
+        .then(Mono.just(ApiResponse.ok("Logged out successfully", null)));
   }
 }

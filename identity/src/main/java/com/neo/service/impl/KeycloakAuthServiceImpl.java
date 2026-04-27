@@ -6,6 +6,7 @@ import com.neo.dto.TokenResponse;
 import com.neo.exception.AuthException;
 import com.neo.service.KeycloakAuthService;
 import java.util.Map;
+import java.util.function.BiFunction;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -14,7 +15,6 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.WebClient;
-import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.core.publisher.Mono;
 
 @Slf4j
@@ -24,13 +24,25 @@ public class KeycloakAuthServiceImpl implements KeycloakAuthService {
   private final KeycloakProperties keycloakProperties;
   private final WebClient webClient;
 
-  public KeycloakAuthServiceImpl(KeycloakProperties keycloakProperties, WebClient webClient) {
+  private final KeycloakGenericConnector keycloakGenericConnector;
+  private final KeycloakAdminServiceImpl keycloakAdminService;
+
+  public static final BiFunction<String, HttpStatus, RuntimeException> AUTH_ERROR_FACTORY =
+      (msg, status) -> new AuthException(msg, status);
+
+  public KeycloakAuthServiceImpl(
+      KeycloakProperties keycloakProperties,
+      WebClient webClient,
+      KeycloakGenericConnector keycloakGenericConnector,
+      KeycloakAdminServiceImpl keycloakAdminService) {
     this.keycloakProperties = keycloakProperties;
     this.webClient = webClient;
+    this.keycloakGenericConnector = keycloakGenericConnector;
+    this.keycloakAdminService = keycloakAdminService;
   }
 
   @Override
-  public TokenResponse login(String username, String password) {
+  public Mono<TokenResponse> login(String username, String password) {
     log.debug("Attempting login for user: {}", username);
 
     MultiValueMap<String, String> formData = new LinkedMultiValueMap<>();
@@ -41,11 +53,17 @@ public class KeycloakAuthServiceImpl implements KeycloakAuthService {
     formData.add("password", password);
     formData.add("scope", "openid profile email");
 
-    return postToKeycloak(keycloakProperties.getTokenEndpoint(), formData);
+    return keycloakGenericConnector.postMono(
+        keycloakProperties.getTokenEndpoint(),
+        MediaType.APPLICATION_FORM_URLENCODED,
+        BodyInserters.fromFormData(formData),
+        null,
+        TokenResponse.class,
+        AUTH_ERROR_FACTORY);
   }
 
   @Override
-  public TokenResponse refresh(String refreshToken) {
+  public Mono<TokenResponse> refresh(String refreshToken) {
     log.debug("Refreshing token");
 
     MultiValueMap<String, String> formData = new LinkedMultiValueMap<>();
@@ -54,11 +72,17 @@ public class KeycloakAuthServiceImpl implements KeycloakAuthService {
     formData.add("client_secret", keycloakProperties.getClientSecret());
     formData.add("refresh_token", refreshToken);
 
-    return postToKeycloak(keycloakProperties.getTokenEndpoint(), formData);
+    return keycloakGenericConnector.postMono(
+        keycloakProperties.getTokenEndpoint(),
+        MediaType.APPLICATION_FORM_URLENCODED,
+        BodyInserters.fromFormData(formData),
+        null,
+        TokenResponse.class,
+        AUTH_ERROR_FACTORY);
   }
 
   @Override
-  public void logout(String refreshToken) {
+  public Mono<Void> logout(String refreshToken) {
     log.debug("Logging out user");
 
     MultiValueMap<String, String> formData = new LinkedMultiValueMap<>();
@@ -66,29 +90,17 @@ public class KeycloakAuthServiceImpl implements KeycloakAuthService {
     formData.add("client_secret", keycloakProperties.getClientSecret());
     formData.add("refresh_token", refreshToken);
 
-    webClient
-        .post()
-        .uri(keycloakProperties.getLogoutEndpoint())
-        .contentType(MediaType.APPLICATION_FORM_URLENCODED)
-        .body(BodyInserters.fromFormData(formData))
-        .retrieve()
-        .onStatus(
-            status -> status.is4xxClientError() || status.is5xxServerError(),
-            response ->
-                response
-                    .bodyToMono(String.class)
-                    .flatMap(
-                        body ->
-                            Mono.error(
-                                new AuthException(
-                                    "Logout failed: " + body, HttpStatus.BAD_REQUEST))))
-        .bodyToMono(Void.class)
-        .block();
+    return keycloakGenericConnector.postMono(
+        keycloakProperties.getLogoutEndpoint(),
+        MediaType.APPLICATION_FORM_URLENCODED,
+        BodyInserters.fromFormData(formData),
+        null,
+        Void.class,
+        AUTH_ERROR_FACTORY);
   }
 
   @Override
-  public void register(RegisterRequest request) {
-    String realmToken = getRealmToken();
+  public Mono<Void> register(RegisterRequest request) {
     final boolean ENABLE = true;
     log.debug("Create User Request : {}", request);
 
@@ -108,98 +120,41 @@ public class KeycloakAuthServiceImpl implements KeycloakAuthService {
                                 "value", c.getValue(),
                                 "temporary", c.getTemporary()))
                     .toList());
+    return keycloakAdminService
+        .getAccessTokenCache()
+        .flatMap(token -> keycloakUserRegister(token, body))
+        .onErrorResume(
+            AuthException.class,
+            e -> {
+              if (e.getStatus() == HttpStatus.UNAUTHORIZED) {
+                // 401 → force refresh and retry once
+                return keycloakAdminService
+                    .forceRefresh()
+                    .flatMap(newToken -> keycloakUserRegister(newToken, body));
+              }
+              return Mono.error(e);
+            });
+  }
 
-    webClient
+  private Mono<Void> keycloakUserRegister(String token, Map<String, Object> body) {
+    return webClient
         .post()
         .uri(keycloakProperties.getRegisterEndpoint())
-        .headers(h -> h.setBearerAuth(realmToken))
+        .headers(h -> h.setBearerAuth(token))
         .contentType(MediaType.APPLICATION_JSON)
         .bodyValue(body)
         .retrieve()
         .onStatus(
             status -> status.is4xxClientError(),
-            resp ->
-                resp.bodyToMono(String.class)
+            response ->
+                response
+                    .bodyToMono(String.class)
                     .flatMap(
-                        b -> {
-                          log.info("Response status: {}, body: {}", resp.statusCode(), b);
+                        errorBody -> {
+                          log.error("Keycloak 4xx error: {}", errorBody);
                           return Mono.error(
-                              new AuthException(
-                                  "Failed to create role: " + b, HttpStatus.BAD_REQUEST));
+                              new AuthException("Authentication failed", HttpStatus.BAD_REQUEST));
                         }))
-        .bodyToMono(Void.class)
-        .block();
-  }
-
-  private TokenResponse postToKeycloak(String url, MultiValueMap<String, String> formData) {
-    try {
-      return webClient
-          .post()
-          .uri(url)
-          .contentType(MediaType.APPLICATION_FORM_URLENCODED)
-          .body(BodyInserters.fromFormData(formData))
-          .retrieve()
-          .onStatus(
-              status -> status.value() == 401,
-              response ->
-                  Mono.error(
-                      new AuthException("Invalid username or password", HttpStatus.UNAUTHORIZED)))
-          .onStatus(
-              status -> status.is4xxClientError(),
-              response ->
-                  response
-                      .bodyToMono(String.class)
-                      .flatMap(
-                          body -> {
-                            log.error("Keycloak 4xx error: {}", body);
-                            return Mono.error(
-                                new AuthException("Authentication failed", HttpStatus.BAD_REQUEST));
-                          }))
-          .onStatus(
-              status -> status.is5xxServerError(),
-              response ->
-                  Mono.error(
-                      new AuthException("Keycloak server error", HttpStatus.SERVICE_UNAVAILABLE)))
-          .bodyToMono(TokenResponse.class)
-          .block();
-    } catch (WebClientResponseException e) {
-      log.error("Keycloak request failed: {} - {}", e.getStatusCode(), e.getResponseBodyAsString());
-      throw new AuthException("Authentication service error", HttpStatus.SERVICE_UNAVAILABLE);
-    }
-  }
-
-  // ── Realm Token ───────────────────────────────────────────────────────────
-
-  /** Returns Realm Access Token */
-  private String getRealmToken() {
-    MultiValueMap<String, String> formData = new LinkedMultiValueMap<>();
-    formData.add("grant_type", "client_credentials");
-    formData.add("client_id", keycloakProperties.getClientId());
-    formData.add("client_secret", keycloakProperties.getClientSecret());
-
-    Map<?, ?> response =
-        webClient
-            .post()
-            .uri(keycloakProperties.getRealmToken())
-            .contentType(MediaType.APPLICATION_FORM_URLENCODED)
-            .body(BodyInserters.fromFormData(formData))
-            .retrieve()
-            .onStatus(
-                status -> status.is4xxClientError() || status.is5xxServerError(),
-                resp ->
-                    resp.bodyToMono(String.class)
-                        .flatMap(
-                            body ->
-                                Mono.error(
-                                    new AuthException(
-                                        "Failed to obtain admin token: " + body,
-                                        HttpStatus.INTERNAL_SERVER_ERROR))))
-            .bodyToMono(Map.class)
-            .block();
-
-    if (response == null || !response.containsKey("access_token")) {
-      throw new AuthException("Realm token response is empty", HttpStatus.INTERNAL_SERVER_ERROR);
-    }
-    return (String) response.get("access_token");
+        .bodyToMono(Void.class);
   }
 }

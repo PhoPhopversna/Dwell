@@ -15,6 +15,8 @@ public class KeycloakProperties {
   private String adminUsername;
   private String adminPassword;
   private String adminClientId = "admin-cli";
+  private long tokenTtl;
+  private long refreshTokenTtl;
 
   public String getTokenEndpoint() {
     return url + "/realms/" + realm + "/protocol/openid-connect/token";
@@ -58,5 +60,13 @@ public class KeycloakProperties {
 
   public String getRealmToken() {
     return url + "/realms/" + realm + "/protocol/openid-connect/token";
+  }
+
+  public Long getTokenTtl() {
+    return tokenTtl;
+  }
+
+  public Long getRefreshTokenTtl() {
+    return refreshTokenTtl;
   }
 }

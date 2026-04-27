@@ -21,6 +21,12 @@ spring:
         jwt:
           jwk-set-uri: http://localhost:8080/realms/Dwell/protocol/openid-connect/certs
           issuer-uri: http://localhost:8080/realms/Dwell
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      repositories:
+        enabled: false
 keycloak:
   url: ${KEYCLOAK_URL:http://localhost:8080}
   realm: ${KEYCLOAK_REALM:Dwell}
@@ -29,6 +35,8 @@ keycloak:
   admin-username: ${KEYCLOAK_ADMIN_USERNAME:admin}
   admin-password: ${KEYCLOAK_ADMIN_PASSWORD:admin}
   admin-client-id: admin-cli
+  token-ttl: 55 # access token TTL (Keycloak default 60s)
+  refresh-token-ttl: 1740 # refresh token TTL (Keycloak default 1800s/30min)
 management:
   endpoints:
     web:
