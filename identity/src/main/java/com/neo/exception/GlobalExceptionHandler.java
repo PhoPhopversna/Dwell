@@ -3,6 +3,7 @@ package com.neo.exception;
 import com.neo.dto.ApiResponse;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
@@ -10,18 +11,32 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.server.ServerWebExchange;
 
 @Slf4j
 @ControllerAdvice
 public class GlobalExceptionHandler {
+
+  private static final String CORRELATION_ID_KEY = "correlationId";
+
   @ExceptionHandler(AuthException.class)
-  public ResponseEntity<ApiResponse<Void>> handleAuthException(AuthException ex) {
+  public ResponseEntity<ApiResponse<Void>> handleAuthException(
+      AuthException ex, ServerWebExchange webExchange) {
+    String correlationId = webExchange.getRequest().getHeaders().getFirst("X-Correlation-Id");
+    if (correlationId != null) {
+      MDC.put(CORRELATION_ID_KEY, correlationId);
+    }
     log.warn("Auth error: {}", ex.getMessage());
     return ResponseEntity.status(ex.getStatus()).body(ApiResponse.error(ex.getMessage()));
   }
 
   @ExceptionHandler(ConflictException.class)
-  public ResponseEntity<ApiResponse<Void>> handleAuthException(ConflictException ex) {
+  public ResponseEntity<ApiResponse<Void>> handleAuthException(
+      ConflictException ex, ServerWebExchange webExchange) {
+    String correlationId = webExchange.getRequest().getHeaders().getFirst("X-Correlation-Id");
+    if (correlationId != null) {
+      MDC.put(CORRELATION_ID_KEY, correlationId);
+    }
     log.warn("Auth error: {}", ex.getMessage());
     return ResponseEntity.status(HttpStatus.CONFLICT).body(ApiResponse.error(ex.getMessage()));
   }

@@ -10,7 +10,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 @RestController
-@RequestMapping("/api/v1/roles")
+@RequestMapping("/api/roles")
 @Slf4j
 public class RoleController {
   private final RoleService roleService;

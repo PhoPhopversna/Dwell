@@ -1,20 +1,17 @@
 server:
   port: 8083
-  servlet:
-    context-path: /identity
 spring:
   application:
     name: identity-service
-  datasource:
-    url: jdbc:postgresql://localhost:5432/gateway
+  r2dbc:
+    url: r2dbc:postgresql://localhost:5432/identity
     username: tixly-ticket
     password: tixly123
-  jpa:
-    hibernate:
-      ddl-auto: update
-    properties:
-      hibernate:
-        dialect: org.hibernate.dialect.PostgreSQLDialect
+  webflux:
+    base-path: /identity
+  sql:
+    init:
+      mode: always
   security:
     oauth2:
       resourceserver:
@@ -48,8 +45,13 @@ logging:
   level:
     root: INFO
     org.springframework.web: DEBUG
+    org.springframework.web.reactive.function.client.ExchangeFunctions: WARN
+    org.springframework.web.HttpLogging: WARN
+    org.springframework.web.server.adapter.HttpWebHandlerAdapter: INFO
+    org.springframework.web.reactive.result.method: INFO
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss} [%X{correlationId}] %-5level %logger - %msg%n"
+
 webclient:
   timeout:
     connect: 5000      # 5 seconds
