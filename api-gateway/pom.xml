@@ -83,6 +83,10 @@
             <version>3.6.6</version>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>context-propagation</artifactId>
+        </dependency>
 
     </dependencies>
 

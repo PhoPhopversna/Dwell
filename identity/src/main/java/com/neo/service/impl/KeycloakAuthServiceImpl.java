@@ -1,11 +1,16 @@
 package com.neo.service.impl;
 
 import com.neo.config.KeycloakProperties;
+import com.neo.dto.AppUserRequest;
 import com.neo.dto.RegisterRequest;
 import com.neo.dto.TokenResponse;
+import com.neo.dto.UserAuditRequest;
 import com.neo.exception.AuthException;
 import com.neo.service.KeycloakAuthService;
+import com.neo.service.UserService;
+import java.net.URI;
 import java.util.Map;
+import java.util.UUID;
 import java.util.function.BiFunction;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -27,6 +32,10 @@ public class KeycloakAuthServiceImpl implements KeycloakAuthService {
   private final KeycloakGenericConnector keycloakGenericConnector;
   private final KeycloakAdminServiceImpl keycloakAdminService;
 
+  private final UserService userService;
+
+  private static final String CORRELATION_ID_MDC_KEY = "correlationId";
+
   public static final BiFunction<String, HttpStatus, RuntimeException> AUTH_ERROR_FACTORY =
       (msg, status) -> new AuthException(msg, status);
 
@@ -34,11 +43,13 @@ public class KeycloakAuthServiceImpl implements KeycloakAuthService {
       KeycloakProperties keycloakProperties,
       WebClient webClient,
       KeycloakGenericConnector keycloakGenericConnector,
-      KeycloakAdminServiceImpl keycloakAdminService) {
+      KeycloakAdminServiceImpl keycloakAdminService,
+      UserService userService) {
     this.keycloakProperties = keycloakProperties;
     this.webClient = webClient;
     this.keycloakGenericConnector = keycloakGenericConnector;
     this.keycloakAdminService = keycloakAdminService;
+    this.userService = userService;
   }
 
   @Override
@@ -106,7 +117,7 @@ public class KeycloakAuthServiceImpl implements KeycloakAuthService {
 
     Map<String, Object> body =
         Map.of(
-            "username", request.getUsername(),
+            "username", request.getUserName(),
             "email", request.getEmail(),
             "firstName", request.getFirstName(),
             "lastName", request.getLastName(),
@@ -120,23 +131,53 @@ public class KeycloakAuthServiceImpl implements KeycloakAuthService {
                                 "value", c.getValue(),
                                 "temporary", c.getTemporary()))
                     .toList());
-    return keycloakAdminService
-        .getAccessTokenCache()
-        .flatMap(token -> keycloakUserRegister(token, body))
-        .onErrorResume(
-            AuthException.class,
-            e -> {
-              if (e.getStatus() == HttpStatus.UNAUTHORIZED) {
-                // 401 → force refresh and retry once
-                return keycloakAdminService
-                    .forceRefresh()
-                    .flatMap(newToken -> keycloakUserRegister(newToken, body));
-              }
-              return Mono.error(e);
-            });
+    return Mono.deferContextual(
+        ctx -> {
+          String correlationId =
+              ctx.getOrDefault(CORRELATION_ID_MDC_KEY, UUID.randomUUID().toString());
+          return keycloakAdminService
+              .getAccessTokenCache()
+              .flatMap(token -> keycloakUserRegister(token, body))
+              .onErrorResume(
+                  AuthException.class,
+                  e -> {
+                    if (e.getStatus() == HttpStatus.UNAUTHORIZED) {
+                      // 401 → force refresh and retry once
+                      return keycloakAdminService
+                          .forceRefresh()
+                          .flatMap(newToken -> keycloakUserRegister(newToken, body));
+                    }
+                    return Mono.error(e);
+                  })
+              .onErrorResume(
+                  ex ->
+                      userService
+                          .saveUserAuditLog(
+                              new UserAuditRequest(
+                                  null,
+                                  "REGISTER",
+                                  false,
+                                  "Keycloak failed: " + ex.getMessage(),
+                                  correlationId))
+                          .then(Mono.error(ex)))
+              .flatMap(
+                  keycloakId -> {
+                    AppUserRequest appUserRequest =
+                        AppUserRequest.builder()
+                            .keycloakId(keycloakId)
+                            .username(request.getUserName())
+                            .email(request.getEmail())
+                            .active(ENABLE)
+                            .firstName(request.getFirstName())
+                            .lastName(request.getLastName())
+                            .createdBy(request.getCreatedBy())
+                            .build();
+                    return userService.saveUser(appUserRequest, "REGISTER", correlationId);
+                  });
+        });
   }
 
-  private Mono<Void> keycloakUserRegister(String token, Map<String, Object> body) {
+  private Mono<String> keycloakUserRegister(String token, Map<String, Object> body) {
     return webClient
         .post()
         .uri(keycloakProperties.getRegisterEndpoint())
@@ -155,6 +196,18 @@ public class KeycloakAuthServiceImpl implements KeycloakAuthService {
                           return Mono.error(
                               new AuthException("Authentication failed", HttpStatus.BAD_REQUEST));
                         }))
-        .bodyToMono(Void.class);
+        .toBodilessEntity()
+        .map(
+            response -> {
+              URI location = response.getHeaders().getLocation();
+              log.info("Keycloak Response : {}", location);
+              if (location == null) {
+                log.error("Keycloak did not return Location header {}", location);
+                throw new AuthException(
+                    "Keycloak did not return Location header", HttpStatus.INTERNAL_SERVER_ERROR);
+              }
+              String path = location.getPath();
+              return path.substring(path.lastIndexOf('/') + 1);
+            });
   }
 }

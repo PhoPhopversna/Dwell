@@ -3,6 +3,7 @@ package com.neo.service.impl;
 import java.util.function.BiFunction;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.reactive.ClientHttpRequest;
 import org.springframework.stereotype.Service;
@@ -29,27 +30,11 @@ public class KeycloakGenericConnector {
       Class<T> responseType,
       BiFunction<String, HttpStatus, RuntimeException> errorFactory) {
 
+    WebClient.ResponseSpec spec =
+        webClient.get().uri(url).headers(h -> setBearerAuth(h, token)).retrieve();
+
     return applyErrorHandling(
-        webClient
-            .get()
-            .uri(url)
-            .headers(h -> setBearerAuth(h, token))
-            .retrieve()
-            .onStatus(
-                status -> status.is4xxClientError(),
-                resp ->
-                    resp.bodyToMono(String.class)
-                        .flatMap(
-                            body ->
-                                Mono.error(
-                                    errorFactory.apply(
-                                        "Client error: " + body, HttpStatus.BAD_REQUEST))))
-            .onStatus(
-                status -> status.is5xxServerError(),
-                resp ->
-                    Mono.error(errorFactory.apply("Server error", HttpStatus.SERVICE_UNAVAILABLE)))
-            .bodyToFlux(responseType),
-        errorFactory);
+        applyStatusHandlers(spec, url, errorFactory).bodyToFlux(responseType), url, errorFactory);
   }
 
   public <T> Mono<T> getMono(
@@ -61,10 +46,6 @@ public class KeycloakGenericConnector {
     return getFlux(url, token, responseType, errorFactory).next();
   }
 
-  // =========================================================================
-  // POST
-  // =========================================================================
-
   public <T> Flux<T> postFlux(
       String url,
       MediaType contentType,
@@ -73,33 +54,17 @@ public class KeycloakGenericConnector {
       Class<T> responseType,
       BiFunction<String, HttpStatus, RuntimeException> errorFactory) {
 
-    return applyErrorHandling(
+    WebClient.ResponseSpec spec =
         webClient
             .post()
             .uri(url)
             .contentType(contentType)
             .headers(h -> setBearerAuth(h, token))
             .body(body)
-            .retrieve()
-            .onStatus(
-                status -> status.value() == 401,
-                resp -> Mono.error(errorFactory.apply("Unauthorized", HttpStatus.UNAUTHORIZED)))
-            .onStatus(
-                status -> status.is4xxClientError(),
-                resp ->
-                    resp.bodyToMono(String.class)
-                        .flatMap(
-                            errorBody -> {
-                              log.error("4xx error: {}", errorBody);
-                              return Mono.error(
-                                  errorFactory.apply("Client error", HttpStatus.BAD_REQUEST));
-                            }))
-            .onStatus(
-                status -> status.is5xxServerError(),
-                resp ->
-                    Mono.error(errorFactory.apply("Server error", HttpStatus.SERVICE_UNAVAILABLE)))
-            .bodyToFlux(responseType),
-        errorFactory);
+            .retrieve();
+
+    return applyErrorHandling(
+        applyStatusHandlers(spec, url, errorFactory).bodyToFlux(responseType), url, errorFactory);
   }
 
   public <T> Mono<T> postMono(
@@ -113,10 +78,6 @@ public class KeycloakGenericConnector {
     return postFlux(url, contentType, body, token, responseType, errorFactory).next();
   }
 
-  // =========================================================================
-  // PUT
-  // =========================================================================
-
   public <T> Mono<T> putMono(
       String url,
       MediaType contentType,
@@ -125,91 +86,72 @@ public class KeycloakGenericConnector {
       Class<T> responseType,
       BiFunction<String, HttpStatus, RuntimeException> errorFactory) {
 
+    WebClient.ResponseSpec spec =
+        webClient
+            .put()
+            .uri(url)
+            .contentType(contentType)
+            .headers(h -> setBearerAuth(h, token))
+            .body(body)
+            .retrieve();
+
     return applyErrorHandling(
-            webClient
-                .put()
-                .uri(url)
-                .contentType(contentType)
-                .headers(h -> setBearerAuth(h, token))
-                .body(body)
-                .retrieve()
-                .onStatus(
-                    status -> status.is4xxClientError(),
-                    resp ->
-                        resp.bodyToMono(String.class)
-                            .flatMap(
-                                errorBody ->
-                                    Mono.error(
-                                        errorFactory.apply(
-                                            "Client error: " + errorBody, HttpStatus.BAD_REQUEST))))
-                .onStatus(
-                    status -> status.is5xxServerError(),
-                    resp ->
-                        Mono.error(
-                            errorFactory.apply("Server error", HttpStatus.SERVICE_UNAVAILABLE)))
-                .bodyToFlux(responseType),
+            applyStatusHandlers(spec, url, errorFactory).bodyToFlux(responseType),
+            url,
             errorFactory)
         .next();
   }
 
-  // =========================================================================
-  // DELETE
-  // =========================================================================
-
   public Mono<Void> delete(
       String url, String token, BiFunction<String, HttpStatus, RuntimeException> errorFactory) {
 
+    WebClient.ResponseSpec spec =
+        webClient.delete().uri(url).headers(h -> setBearerAuth(h, token)).retrieve();
+
     return applyErrorHandling(
-            webClient
-                .delete()
-                .uri(url)
-                .headers(h -> setBearerAuth(h, token))
-                .retrieve()
-                .onStatus(
-                    status -> status.is4xxClientError(),
-                    resp ->
-                        resp.bodyToMono(String.class)
-                            .flatMap(
-                                errorBody ->
-                                    Mono.error(
-                                        errorFactory.apply(
-                                            "Client error: " + errorBody, HttpStatus.BAD_REQUEST))))
-                .onStatus(
-                    status -> status.is5xxServerError(),
-                    resp ->
-                        Mono.error(
-                            errorFactory.apply("Server error", HttpStatus.SERVICE_UNAVAILABLE)))
-                .bodyToFlux(Void.class),
-            errorFactory)
+            applyStatusHandlers(spec, url, errorFactory).bodyToFlux(Void.class), url, errorFactory)
         .then();
   }
 
   private <T> Flux<T> applyErrorHandling(
-      Flux<T> flux, BiFunction<String, HttpStatus, RuntimeException> errorFactory) {
+      Flux<T> flux, String url, BiFunction<String, HttpStatus, RuntimeException> errorFactory) {
 
-    return flux.onErrorMap(
+    return flux
+        // Connection-level failure (e.g. Keycloak is down, DNS failure, timeout)
+        .onErrorMap(
             WebClientRequestException.class,
             e -> {
-              log.error("Connection error: {}", e.getMessage());
-              return errorFactory.apply("Service unreachable", HttpStatus.SERVICE_UNAVAILABLE);
+              log.error("Connection error reaching Keycloak [{}]: {}", url, e.getMessage());
+              return errorFactory.apply(
+                  "Keycloak is unreachable: connection failed", HttpStatus.SERVICE_UNAVAILABLE);
             })
+
+        // Response-level failure not caught by onStatus (should rarely occur)
         .onErrorMap(
             WebClientResponseException.class,
             e -> {
-              log.error("Request failed: {} - {}", e.getStatusCode(), e.getResponseBodyAsString());
-              return errorFactory.apply("Service error", HttpStatus.SERVICE_UNAVAILABLE);
+              log.error(
+                  "Unexpected WebClient response error [{}] - status: {}, body: {}",
+                  url,
+                  e.getStatusCode(),
+                  e.getResponseBodyAsString());
+              return errorFactory.apply(
+                  "Unexpected response from Keycloak", HttpStatus.SERVICE_UNAVAILABLE);
             })
+
+        // Any other unchecked exception not already wrapped by our factory
         .onErrorMap(
-            e -> !(e instanceof RuntimeException) || isUnmappedRuntimeException(e, errorFactory),
+            e -> !(e instanceof RuntimeException) || isUnmappedRuntimeException(e),
             e -> {
-              log.error("Unexpected error: {}", e.getMessage());
-              return errorFactory.apply("Unexpected error", HttpStatus.INTERNAL_SERVER_ERROR);
+              log.error(
+                  "Unexpected error during Keycloak request [{}]: {}", url, e.getMessage(), e);
+              return errorFactory.apply(
+                  "Unexpected internal error", HttpStatus.INTERNAL_SERVER_ERROR);
             });
   }
 
   /** True when the exception was NOT already produced by our errorFactory chain. */
-  private boolean isUnmappedRuntimeException(
-      Throwable e, BiFunction<String, HttpStatus, RuntimeException> errorFactory) {
+  private boolean isUnmappedRuntimeException(Throwable e) {
     return false;
   }
 
@@ -217,5 +159,54 @@ public class KeycloakGenericConnector {
     if (token != null && !token.isBlank()) {
       headers.setBearerAuth(token);
     }
+  }
+
+  private WebClient.ResponseSpec applyStatusHandlers(
+      WebClient.ResponseSpec spec,
+      String url,
+      BiFunction<String, HttpStatus, RuntimeException> errorFactory) {
+
+    return spec.onStatus(
+            status -> status.value() == 401,
+            resp -> {
+              log.warn("401 Unauthorized from Keycloak [{}]", url);
+              return Mono.error(
+                  errorFactory.apply("Invalid or expired token", HttpStatus.UNAUTHORIZED));
+            })
+        .onStatus(
+            status -> status.value() == 403,
+            resp -> {
+              log.warn("403 Forbidden from Keycloak [{}]", url);
+              return Mono.error(
+                  errorFactory.apply(
+                      "Insufficient permissions to access resource", HttpStatus.FORBIDDEN));
+            })
+        .onStatus(
+            status -> status.value() == 404,
+            resp -> {
+              log.warn("404 Not Found from Keycloak [{}]", url);
+              return Mono.error(errorFactory.apply("Resource not found", HttpStatus.NOT_FOUND));
+            })
+        .onStatus(
+            HttpStatusCode::is4xxClientError,
+            resp ->
+                resp.bodyToMono(String.class)
+                    .flatMap(
+                        body -> {
+                          log.warn("4xx error from Keycloak [{}]: {}", url, body);
+                          return Mono.error(
+                              errorFactory.apply("Invalid Request", HttpStatus.BAD_REQUEST));
+                        }))
+        .onStatus(
+            HttpStatusCode::is5xxServerError,
+            resp ->
+                resp.bodyToMono(String.class)
+                    .flatMap(
+                        body -> {
+                          log.error("5xx error from Keycloak [{}]: {}", url, body);
+                          return Mono.<Throwable>error(
+                              errorFactory.apply(
+                                  "Internal Server Error", HttpStatus.SERVICE_UNAVAILABLE));
+                        }));
   }
 }

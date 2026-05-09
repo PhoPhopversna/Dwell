@@ -17,7 +17,10 @@ public class RouteController {
 
   @GetMapping
   public Mono<ApiResponse<List<RouteResponse>>> getRoutes() {
-    return routeService.getRoutes().collectList().map(routeResponse -> ApiResponse.ok("Successfully", routeResponse));
+    return routeService
+        .getRoutes()
+        .collectList()
+        .map(routeResponse -> ApiResponse.ok("Successfully", routeResponse));
   }
 
   @GetMapping("/{id}")
