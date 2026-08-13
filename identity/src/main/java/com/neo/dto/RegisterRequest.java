@@ -21,7 +21,7 @@ public class RegisterRequest {
 
   private Boolean enabled;
 
-  @JsonProperty("create_by")
+  @JsonProperty("created_by")
   private String createdBy;
 
   private List<Credential> credentials;
