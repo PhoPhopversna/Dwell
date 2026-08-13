@@ -1,0 +1,15 @@
+server:
+  port: 8084
+spring:
+  application:
+    name: product-catalog
+  datasource:
+    url: jdbc:postgresql://localhost:5432/product-catalog
+    username: tixly-ticket
+    password: tixly123
+  jpa:
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
