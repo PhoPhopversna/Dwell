@@ -13,3 +13,50 @@ spring:
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
+  kafka:
+    bootstrap-servers: localhost:9092
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      acks: all
+      properties:
+        enable.idempotence: true
+        spring.json.add.type.headers: true
+    consumer:
+      group-id: default-group
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      properties:
+        spring.json.trusted.packages: "com.neo.event"
+        spring.json.use.type.headers: true
+    listener:
+      ack-mode: manual_immediate
+      concurrency: 3
+
+app:
+  kafka:
+    partitions: 3
+    replicas: 1
+
+    image-uploaded:
+      topic: product-image-uploaded
+      dlt: product-image-uploaded.DLT
+
+    alert:
+      topic: alert-topic
+      dlt: alert-topic.DLT
+      group-id: alert-group
+minio:
+  url: http://localhost:9000
+  access-key: J2EKYPGMRQ4FE6C3EG08
+  secret-key: clOqs7j771hHcDbuuTF6M5wJkjzJpVcBXUv0duYZ
+  bucket: images
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: method
+  api-docs:
+    path: /v3/api-docs
+  packages-to-scan: com.neo.controller
