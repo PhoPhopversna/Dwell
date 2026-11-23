@@ -34,6 +34,24 @@ keycloak:
   admin-client-id: admin-cli
   token-ttl: 55 # access token TTL (Keycloak default 60s)
   refresh-token-ttl: 1740 # refresh token TTL (Keycloak default 1800s/30min)
+app:
+  # Only accept requests forwarded by the API gateway (it adds this header + secret).
+  gateway-auth:
+    enabled: ${GATEWAY_AUTH_ENABLED:true}
+    header-name: X-Gateway-Secret
+    secret: ${GATEWAY_SECRET:dwell-dev-gateway-secret}
+    excluded-paths: [] # e.g. /actuator/health
+
+  # Creates the first ADMIN at startup (idempotent; never resets an existing password).
+  # Change the password via env var outside local dev.
+  bootstrap:
+    enabled: ${BOOTSTRAP_ENABLED:true}
+    realm-roles: [ADMIN, CUSTOMER]
+    admin-role: ADMIN
+    admin-username: ${BOOTSTRAP_ADMIN_USERNAME:dwell_admin}
+    admin-email: ${BOOTSTRAP_ADMIN_EMAIL:dwell_admin@example.com}
+    admin-password: ${BOOTSTRAP_ADMIN_PASSWORD:Admin@12345}
+
 management:
   endpoints:
     web:

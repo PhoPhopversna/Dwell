@@ -6,6 +6,7 @@ import com.neo.dto.RegisterRequest;
 import com.neo.dto.TokenResponse;
 import com.neo.dto.UserAuditRequest;
 import com.neo.exception.AuthException;
+import com.neo.exception.ConflictException;
 import com.neo.service.KeycloakAuthService;
 import com.neo.service.UserService;
 import java.net.URI;
@@ -185,6 +186,20 @@ public class KeycloakAuthServiceImpl implements KeycloakAuthService {
         .contentType(MediaType.APPLICATION_JSON)
         .bodyValue(body)
         .retrieve()
+        .onStatus(
+            status -> status.value() == 409,
+            response ->
+                response
+                    .bodyToMono(String.class)
+                    .defaultIfEmpty("")
+                    .flatMap(
+                        errorBody -> {
+                          log.warn("Keycloak 409 on register: {}", errorBody);
+                          return Mono.error(
+                              new ConflictException(
+                                  "User with this username or email already exists",
+                                  HttpStatus.CONFLICT));
+                        }))
         .onStatus(
             status -> status.is4xxClientError(),
             response ->
