@@ -31,6 +31,7 @@ public class ProductResponse {
   private Product.Status status;
   private Map<String, Object> attributes;
   private List<ProductVariantResponse> variants;
+  private List<ProductImageResponse> images;
 
   @JsonProperty("created_at")
   private Instant createdAt;

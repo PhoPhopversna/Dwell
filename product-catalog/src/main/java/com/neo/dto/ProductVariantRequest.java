@@ -10,11 +10,16 @@ public class ProductVariantRequest {
 
   @NotBlank
   @Size(max = 64)
-  private String sku; // ASSUMPTION — adjust to match real ProductVariant fields
+  private String sku;
 
-  @NotNull
+  /** Price override for this variant. Null means "use the product's base price". */
   @DecimalMin(value = "0.0", inclusive = true)
+  @Digits(integer = 10, fraction = 2)
   private BigDecimal price;
 
-  private Map<String, Object> attributes; // e.g. size/color overrides
+  /** What distinguishes this variant, e.g. {"size":"M","color":"red"}. */
+  private Map<String, Object> attributes;
+
+  @Size(max = 64)
+  private String barcode;
 }

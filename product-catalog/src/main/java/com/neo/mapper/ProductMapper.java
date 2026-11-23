@@ -36,6 +36,9 @@ public abstract class ProductMapper {
   @Mapping(target = "categoryName", source = "category.name")
   public abstract ProductResponse toResponse(Product product);
 
+  @Mapping(target = "price", source = "priceOverride")
+  @Mapping(target = "attributes", source = "variantAttributes")
+  @Mapping(target = "effectivePrice", expression = "java(variant.getEffectivePrice())")
   public abstract ProductVariantResponse toResponse(ProductVariant variant);
 
   public abstract ProductImageResponse toResponse(ProductImage image);
