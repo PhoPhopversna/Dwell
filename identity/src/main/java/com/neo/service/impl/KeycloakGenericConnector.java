@@ -1,5 +1,6 @@
 package com.neo.service.impl;
 
+import com.neo.exception.ConflictException;
 import java.util.function.BiFunction;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -187,6 +188,18 @@ public class KeycloakGenericConnector {
               log.warn("404 Not Found from Keycloak [{}]", url);
               return Mono.error(errorFactory.apply("Resource not found", HttpStatus.NOT_FOUND));
             })
+        .onStatus(
+            status -> status.value() == 409,
+            resp ->
+                resp.bodyToMono(String.class)
+                    .defaultIfEmpty("")
+                    .flatMap(
+                        body -> {
+                          log.warn("409 Conflict from Keycloak [{}]: {}", url, body);
+                          return Mono.error(
+                              new ConflictException(
+                                  "Resource already exists", HttpStatus.CONFLICT));
+                        }))
         .onStatus(
             HttpStatusCode::is4xxClientError,
             resp ->
