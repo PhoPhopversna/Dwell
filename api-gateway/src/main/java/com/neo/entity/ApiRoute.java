@@ -23,6 +23,10 @@ public class ApiRoute {
   private String groupCode;
   private Integer rateLimit;
   private Integer rateLimitDuration;
+
+  /** Comma-separated realm roles allowed to call this route, or PUBLIC. Null/empty = deny all. */
+  private String roles;
+
   private String status;
   private String pathPattern; // e.g. /users/\d+
   private String normalizedPath; // e.g. /users/{userId}

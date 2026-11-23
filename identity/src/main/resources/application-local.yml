@@ -1,0 +1,6 @@
+# Local development only: activate with SPRING_PROFILES_ACTIVE=local
+# Creates dwell_admin / Admin@12345 with realm role ADMIN on startup (used by the Postman collection).
+app:
+  bootstrap:
+    enabled: ${BOOTSTRAP_ENABLED:true}
+    admin-password: ${BOOTSTRAP_ADMIN_PASSWORD:Admin@12345}

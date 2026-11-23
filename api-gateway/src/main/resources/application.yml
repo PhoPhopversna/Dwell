@@ -45,8 +45,26 @@ spring:
     oauth2:
       resourceserver:
         jwt:
-          jwk-set-uri: http://localhost:8080/realms/rizz-realm/protocol/openid-connect/certs
-          issuer-uri: http://localhost:8080/realms/rizz-realm
+          # Must be the realm the identity service logs users into.
+          jwk-set-uri: ${KEYCLOAK_URL:http://localhost:8080}/realms/${KEYCLOAK_REALM:Dwell}/protocol/openid-connect/certs
+          issuer-uri: ${KEYCLOAK_ISSUER:http://localhost:8080/realms/Dwell}
+
+app:
+  # Shared secret added to every forwarded request; downstream services reject requests without it.
+  gateway-auth:
+    header-name: X-Gateway-Secret
+    secret: ${GATEWAY_SECRET:dwell-dev-gateway-secret}
+
+  # JWT + role checks. Each route's allowed realm roles live in routes.roles
+  # (comma-separated, or PUBLIC). Routes with no roles are denied.
+  security:
+    admin-role: ADMIN # needed for /api/routes (route admin API)
+    public-paths: # always callable without a token, so users can obtain one
+      - /identity/api/auth/login
+      - /identity/api/auth/register
+      - /identity/api/auth/refresh
+      - /identity/api/auth/logout
+      - /health
 
 management:
   endpoints:

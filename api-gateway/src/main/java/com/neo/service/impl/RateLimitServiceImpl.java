@@ -80,8 +80,11 @@ public class RateLimitServiceImpl implements RateLimitService {
         .findFirstByPathAndMethod(normalizedPath, method)
         .flatMap(
             routeConfig -> {
-              if (routeConfig.getRateLimit() == null) {
-                log.info("Here");
+              // null or 0 (the column default) means "no rate limit"
+              if (routeConfig.getRateLimit() == null
+                  || routeConfig.getRateLimit() <= 0
+                  || routeConfig.getRateLimitDuration() == null
+                  || routeConfig.getRateLimitDuration() <= 0) {
                 return Mono.just(true);
               }
 

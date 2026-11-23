@@ -16,3 +16,6 @@ CREATE TABLE IF NOT EXISTS routes (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_by VARCHAR(50)
 );
+
+-- Realm roles allowed per route (comma-separated) or PUBLIC. NULL/empty = deny.
+ALTER TABLE routes ADD COLUMN IF NOT EXISTS roles VARCHAR(500);

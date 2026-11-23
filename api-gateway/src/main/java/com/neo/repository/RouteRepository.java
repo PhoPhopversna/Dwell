@@ -23,8 +23,13 @@ public interface RouteRepository extends R2dbcRepository<ApiRoute, Long> {
   @Query(
       """
     SELECT * FROM routes
-    WHERE method = :method
-    AND :path LIKE REPLACE(path, '**', '%')
+    WHERE (method = :method OR method = '')
+    AND (:path LIKE REPLACE(path, '**', '%') OR :path || '/' LIKE REPLACE(path, '**', '%'))
+    ORDER BY (path = :path) DESC,
+             LENGTH(REPLACE(path, '**', '')) DESC,
+             (method = :method) DESC,
+             id
+    LIMIT 1
     """)
   Mono<ApiRoute> findFirstByPathAndMethod(String path, String method);
 
@@ -51,6 +56,7 @@ public interface RouteRepository extends R2dbcRepository<ApiRoute, Long> {
             status = :status,
             path_pattern = :pathPattern,
             normalized_path = :normalizedPath,
+            roles = :roles,
             updated_at = :now,
             updated_by = :updatedBy
         WHERE id = :id
@@ -68,6 +74,7 @@ public interface RouteRepository extends R2dbcRepository<ApiRoute, Long> {
       String status,
       String pathPattern,
       String normalizedPath,
+      String roles,
       LocalDateTime now,
       String updatedBy);
 }

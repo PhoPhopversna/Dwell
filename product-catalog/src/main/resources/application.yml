@@ -50,6 +50,16 @@ app:
       topic: alert-topic
       dlt: alert-topic.DLT
       group-id: alert-group
+
+  # Only accept requests forwarded by the API gateway (it sets this header + secret).
+  gateway-auth:
+    enabled: ${GATEWAY_AUTH_ENABLED:true}
+    header-name: X-Gateway-Secret
+    secret: ${GATEWAY_SECRET:dwell-dev-gateway-secret}
+    excluded-paths:
+      - /swagger-ui.html
+      - /swagger-ui/**
+      - /v3/api-docs/**
 minio:
   url: http://localhost:9000
   access-key: J2EKYPGMRQ4FE6C3EG08

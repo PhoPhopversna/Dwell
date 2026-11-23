@@ -2,6 +2,7 @@ package com.neo.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.time.LocalDateTime;
+import java.util.List;
 
 public class RouteResponse {
   public Long id;
@@ -15,6 +16,9 @@ public class RouteResponse {
 
   @JsonProperty("rate_limit_duration")
   public Integer rateLimitDuration;
+
+  /** Realm roles allowed to call this route; ["PUBLIC"] means no token needed. */
+  public List<String> roles;
 
   public String status;
 

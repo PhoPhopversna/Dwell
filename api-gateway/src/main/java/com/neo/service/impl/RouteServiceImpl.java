@@ -7,6 +7,7 @@ import com.neo.exception.DataBaseException;
 import com.neo.exception.RouteNotFoundException;
 import com.neo.mapper.RouteMapper;
 import com.neo.repository.RouteRepository;
+import com.neo.security.RouteRoles;
 import com.neo.service.RouteReloadService;
 import com.neo.service.RouteService;
 import java.time.LocalDateTime;
@@ -39,6 +40,7 @@ public class RouteServiceImpl implements RouteService {
     return routeRepository
         .save(routeMapper.toRoute(routeRequest))
         .map(routeMapper::toRouteResponse)
+        .doOnSuccess(saved -> routeReloadService.reloadRoutes())
         .onErrorMap(
             e -> {
               log.error("Failed to save data: {}" + e.getMessage());
@@ -79,6 +81,7 @@ public class RouteServiceImpl implements RouteService {
               System.out.println(r);
               return routeRepository.deleteById(r.getId());
             })
+        .doOnSuccess(v -> routeReloadService.reloadRoutes())
         .doFinally(signal -> log.info("Signal: {}", signal))
         .doOnError(e -> log.error("Error: ", e));
   }
@@ -121,6 +124,7 @@ public class RouteServiceImpl implements RouteService {
             routeRequest.getStatus(),
             routeRequest.getPathPattern(),
             routeRequest.getNormalizedPath(),
+            RouteRoles.join(routeRequest.getRoles()),
             LocalDateTime.now(),
             RouteConstant.SYSTEM)
         .switchIfEmpty(
