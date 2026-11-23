@@ -43,7 +43,9 @@ app:
     image-uploaded:
       topic: product-image-uploaded
       dlt: product-image-uploaded.DLT
-
+    image-deleted:
+      topic: product-image-deleted
+      dlt: product-image-deleted.DLT
     alert:
       topic: alert-topic
       dlt: alert-topic.DLT

@@ -12,6 +12,9 @@ public class KafkaPublisher {
   @Value("${app.kafka.image-uploaded.topic}")
   private String imageUploadedTopic;
 
+  @Value("${app.kafka.image-deleted.topic}")
+  private String imageDeletedTopic;
+
   @Value("${app.kafka.alert.topic}")
   private String alertTopic;
 
@@ -21,6 +24,10 @@ public class KafkaPublisher {
 
   public void publishImageUploaded(String key, Object event) {
     kafkaTemplate.send(imageUploadedTopic, key, event);
+  }
+
+  public void deleteImage(String key, Object event) {
+    kafkaTemplate.send(imageDeletedTopic, key, event);
   }
 
   public void publishAlert(Object event) {
