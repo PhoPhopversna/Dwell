@@ -2,6 +2,7 @@ package com.neo.service.impl;
 
 import com.neo.entity.ApiRoute;
 import com.neo.repository.RouteRepository;
+import com.neo.security.RouteRoles;
 import java.util.Map;
 import org.springframework.cloud.gateway.route.Route;
 import org.springframework.cloud.gateway.route.RouteLocator;
@@ -45,10 +46,15 @@ public class RouteForwardServiceImpl implements RouteLocator {
   }
 
   private Buildable<Route> setPredicateSpec(PredicateSpec predicateSpec, ApiRoute apiRoute) {
-    BooleanSpec booleanSpec = predicateSpec.path(apiRoute.getPath());
-    if (!apiRoute.getMethod().isBlank()) {
-      booleanSpec.and().method(apiRoute.getMethod());
+    boolean anyMethod = apiRoute.getMethod() == null || apiRoute.getMethod().isBlank();
+    // Method-specific routes are matched before catch-all ones, so e.g. a GET row can grant
+    // wider access than the catch-all row for the same path.
+    BooleanSpec booleanSpec = predicateSpec.order(anyMethod ? 1 : 0).path(apiRoute.getPath());
+    if (!anyMethod) {
+      booleanSpec = booleanSpec.and().method(apiRoute.getMethod());
     }
-    return booleanSpec.uri(apiRoute.getUri());
+    return booleanSpec
+        .metadata(RouteRoles.METADATA_KEY, apiRoute.getRoles() == null ? "" : apiRoute.getRoles())
+        .uri(apiRoute.getUri());
   }
 }

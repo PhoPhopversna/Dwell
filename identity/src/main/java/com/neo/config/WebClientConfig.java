@@ -4,6 +4,7 @@ import io.netty.channel.ChannelOption;
 import io.netty.handler.timeout.ReadTimeoutHandler;
 import io.netty.handler.timeout.WriteTimeoutHandler;
 import java.time.Duration;
+import java.util.concurrent.TimeUnit;
 import org.jboss.logging.MDC;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -13,6 +14,7 @@ import org.springframework.web.reactive.function.client.ExchangeFilterFunction;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 import reactor.netty.http.client.HttpClient;
+import reactor.netty.resources.ConnectionProvider;
 
 @Configuration
 public class WebClientConfig {
@@ -29,18 +31,35 @@ public class WebClientConfig {
   public WebClient webClient() {
 
     HttpClient httpClient =
-        HttpClient.create()
+        HttpClient.create(connectionProvider())
             .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, webClientProperties.getConnect())
             .responseTimeout(Duration.ofMillis(webClientProperties.getResponse()))
             .doOnConnected(
                 conn ->
-                    conn.addHandlerLast(new ReadTimeoutHandler(webClientProperties.getRead()))
-                        .addHandlerLast(new WriteTimeoutHandler(webClientProperties.getWrite())));
+                    // Values are milliseconds; the int constructors would read them as seconds.
+                    conn.addHandlerLast(
+                            new ReadTimeoutHandler(
+                                webClientProperties.getRead(), TimeUnit.MILLISECONDS))
+                        .addHandlerLast(
+                            new WriteTimeoutHandler(
+                                webClientProperties.getWrite(), TimeUnit.MILLISECONDS)));
 
     return WebClient.builder()
         .filter(correlationIdExchangeFilter())
         .clientConnector(new ReactorClientHttpConnector(httpClient))
         .codecs(configurer -> configurer.defaultCodecs().maxInMemorySize(1024 * 1024))
+        .build();
+  }
+
+  /**
+   * Drops idle pooled connections before Keycloak/proxies close them, so a request never goes out
+   * on a dead connection ("Connection prematurely closed BEFORE response").
+   */
+  private ConnectionProvider connectionProvider() {
+    return ConnectionProvider.builder("keycloak")
+        .maxIdleTime(Duration.ofSeconds(20))
+        .maxLifeTime(Duration.ofMinutes(5))
+        .evictInBackground(Duration.ofSeconds(30))
         .build();
   }
 

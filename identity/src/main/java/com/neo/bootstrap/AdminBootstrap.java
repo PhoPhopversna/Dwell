@@ -23,6 +23,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.util.retry.Retry;
 
 /**
  * Idempotently makes sure the configured realm roles exist and that the bootstrap admin user exists
@@ -65,6 +66,16 @@ public class AdminBootstrap implements ApplicationRunner {
                       properties.adminUsername(),
                       userId,
                       properties.adminRole()))
+          // All steps are idempotent, so retry the whole thing on transient failures
+          // (e.g. Keycloak still starting).
+          .retryWhen(
+              Retry.backoff(3, Duration.ofSeconds(2))
+                  .doBeforeRetry(
+                      r ->
+                          log.warn(
+                              "Bootstrap attempt {} failed: {}; retrying",
+                              r.totalRetries() + 1,
+                              r.failure().getMessage())))
           .block(Duration.ofSeconds(60));
     } catch (Exception e) {
       log.error("Bootstrap admin failed (service keeps running): {}", e.getMessage(), e);

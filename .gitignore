@@ -33,3 +33,6 @@ build/
 .vscode/
 .DS_Store
 **/.DS_Store
+
+### Local API test collection (not versioned) ###
+postman/

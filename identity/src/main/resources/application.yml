@@ -42,15 +42,17 @@ app:
     secret: ${GATEWAY_SECRET:dwell-dev-gateway-secret}
     excluded-paths: [] # e.g. /actuator/health
 
-  # Creates the first ADMIN at startup (idempotent; never resets an existing password).
-  # Change the password via env var outside local dev.
+  # Optionally creates the first ADMIN at startup (idempotent; never resets an existing
+  # password). OFF by default: in production create the admin in the Keycloak console, or
+  # set BOOTSTRAP_ENABLED=true + BOOTSTRAP_ADMIN_PASSWORD from a secret store.
+  # Local dev: run with SPRING_PROFILES_ACTIVE=local (see application-local.yml).
   bootstrap:
-    enabled: ${BOOTSTRAP_ENABLED:true}
+    enabled: ${BOOTSTRAP_ENABLED:false}
     realm-roles: [ADMIN, CUSTOMER]
     admin-role: ADMIN
     admin-username: ${BOOTSTRAP_ADMIN_USERNAME:dwell_admin}
     admin-email: ${BOOTSTRAP_ADMIN_EMAIL:dwell_admin@example.com}
-    admin-password: ${BOOTSTRAP_ADMIN_PASSWORD:Admin@12345}
+    admin-password: ${BOOTSTRAP_ADMIN_PASSWORD:}
 
 management:
   endpoints:
