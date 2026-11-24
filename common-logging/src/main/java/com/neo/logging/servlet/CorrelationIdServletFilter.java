@@ -21,15 +21,6 @@ import org.slf4j.MDC;
 import org.springframework.web.filter.OncePerRequestFilter;
 import org.springframework.web.util.ContentCachingRequestWrapper;
 
-/**
- * First filter of every servlet service (product-catalog): takes the {@code X-Correlation-ID}
- * forwarded by the gateway (or generates one as a last resort), puts it in the MDC for the whole
- * request, returns it on the response, writes one access-log line (with the masked request and
- * response data), and always clears the MDC so pooled threads never leak an id into the next
- * request.
- *
- * <p>Error dispatches ({@code /error}) are not filtered again, so a failing request is logged once.
- */
 public class CorrelationIdServletFilter extends OncePerRequestFilter {
 
   private static final Logger LOG = LoggerFactory.getLogger(CorrelationIdServletFilter.class);
@@ -58,13 +49,12 @@ public class CorrelationIdServletFilter extends OncePerRequestFilter {
 
     String contentType = request.getContentType();
     String rawQuery = properties.logQuery() ? request.getQueryString() : null;
-    // Caches (up to the cap) only what the handler actually reads; multipart/binary not wrapped.
+    // Caches only what the handler reads, up to the cap; multipart/binary are not wrapped
     ContentCachingRequestWrapper caching =
         properties.logBody() && RequestDataMasker.isLoggableContentType(contentType)
             ? new ContentCachingRequestWrapper(request, properties.maxCaptureBytes())
             : null;
 
-    // Copies (up to the cap) what the controller writes, while it goes to the client unchanged.
     BodyCapturingResponse capturingResponse =
         properties.logResponseBody()
             ? new BodyCapturingResponse(response, properties.maxCaptureBytes())
@@ -134,10 +124,6 @@ public class CorrelationIdServletFilter extends OncePerRequestFilter {
     return new AccessLogger.ResponseData(contentType, body);
   }
 
-  /**
-   * Tees the response body into a {@link BoundedCapture}. Nothing is buffered: every byte or char
-   * goes straight to the real response, so streaming, flushing and Content-Length behave as before.
-   */
   static final class BodyCapturingResponse extends HttpServletResponseWrapper {
 
     final BoundedCapture capture;
@@ -209,7 +195,6 @@ public class CorrelationIdServletFilter extends OncePerRequestFilter {
     }
   }
 
-  /** Writes to the container's own writer; captures the chars as bytes of the response charset. */
   private static final class TeeWriter extends PrintWriter {
 
     private final BoundedCapture capture;

@@ -35,19 +35,14 @@ keycloak:
   token-ttl: 55 # access token TTL (Keycloak default 60s)
   refresh-token-ttl: 1740 # refresh token TTL (Keycloak default 1800s/30min)
 app:
-  # Loki "environment" label + JSON field. e.g. local, dev, staging, prod
   environment: ${APP_ENV:local}
-  # Only accept requests forwarded by the API gateway (it adds this header + secret).
   gateway-auth:
     enabled: ${GATEWAY_AUTH_ENABLED:true}
     header-name: X-Gateway-Secret
     secret: ${GATEWAY_SECRET:dwell-dev-gateway-secret}
     excluded-paths: [] # e.g. /actuator/health
 
-  # Optionally creates the first ADMIN at startup (idempotent; never resets an existing
-  # password). OFF by default: in production create the admin in the Keycloak console, or
-  # set BOOTSTRAP_ENABLED=true + BOOTSTRAP_ADMIN_PASSWORD from a secret store.
-  # Local dev: run with SPRING_PROFILES_ACTIVE=local (see application-local.yml).
+  # Creates the first ADMIN at startup (idempotent); off by default, on with the local profile
   bootstrap:
     enabled: ${BOOTSTRAP_ENABLED:false}
     realm-roles: [ADMIN, CUSTOMER]
@@ -65,14 +60,12 @@ management:
 
 webclient:
   timeout:
-    connect: 5000      # 5 seconds
-    response: 7000     # 7 seconds
+    connect: 5000
+    response: 7000
     read: 7000
     write: 7000
 
 logging:
-  # One JSON object per line (see common-logging DwellJsonLogFormatter), on console and in
-  # ${LOG_DIR}/<service>.log, which Grafana Alloy tails and ships to Loki.
   structured:
     format:
       console: ${LOG_CONSOLE_FORMAT:com.neo.logging.DwellJsonLogFormatter}
@@ -87,6 +80,5 @@ logging:
   level:
     root: ${LOG_LEVEL_ROOT:INFO}
     com.neo: ${LOG_LEVEL_APP:INFO}
-    # request/response lines (com.neo.logging.AccessLogger); DEBUG also logs "Request received"
     com.neo.logging.access: ${LOG_LEVEL_ACCESS:INFO}
     org.springframework.boot.autoconfigure.web.reactive.error.AbstractErrorWebExceptionHandler: OFF

@@ -40,11 +40,7 @@ public class Product {
   @Column(nullable = false, length = 20)
   private Status status = Status.DRAFT;
 
-  /**
-   * Category-specific field values, e.g. {"color":"red","material":"cotton"}. The set of valid keys
-   * is defined by AttributeDefinition rows for this product's category — validate against those
-   * before persisting.
-   */
+  /** Valid keys come from the category's AttributeDefinitions. */
   @JdbcTypeCode(SqlTypes.JSON)
   @Column(columnDefinition = "jsonb", nullable = false)
   private Map<String, Object> attributes = new HashMap<>();
@@ -77,7 +73,6 @@ public class Product {
     this.basePrice = basePrice;
   }
 
-  /** Convenience accessor for a single dynamic attribute value. */
   public Object getAttribute(String key) {
     return attributes.get(key);
   }

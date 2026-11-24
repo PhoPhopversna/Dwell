@@ -12,7 +12,6 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.slf4j.MDC;
 
-/** Correlation id survives HTTP request -> Kafka producer -> Kafka consumer. */
 class KafkaCorrelationIdTest {
 
   private final CorrelationIdProducerInterceptor producer = new CorrelationIdProducerInterceptor();

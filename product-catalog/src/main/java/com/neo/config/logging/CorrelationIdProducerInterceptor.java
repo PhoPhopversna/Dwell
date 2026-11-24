@@ -8,14 +8,6 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
 import org.slf4j.MDC;
 
-/**
- * Adds the current request's correlation id (from the MDC) as the {@code X-Correlation-ID} record
- * header, so the consumer logs under the same id as the HTTP request that produced the event.
- *
- * <p>Registered through {@code spring.kafka.producer.properties.interceptor.classes}. {@code
- * onSend} runs on the thread calling {@code KafkaTemplate.send}, i.e. the request thread, where the
- * MDC is set. An id already present on the record is never overwritten.
- */
 public class CorrelationIdProducerInterceptor implements ProducerInterceptor<Object, Object> {
 
   @Override

@@ -12,10 +12,7 @@ import org.springframework.web.reactive.function.client.ClientResponse;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
-/**
- * An error status from Keycloak must always become an error, even with an empty body. (Before the
- * fix, an empty 4xx/5xx body made the error handler return nothing, and the call "succeeded".)
- */
+/** An error status from Keycloak must always become an error, even with an empty body. */
 class KeycloakGenericConnectorTest {
 
   private static KeycloakGenericConnector connectorAnswering(HttpStatus status, String body) {

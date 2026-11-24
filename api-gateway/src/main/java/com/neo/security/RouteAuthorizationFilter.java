@@ -19,18 +19,7 @@ import org.springframework.util.AntPathMatcher;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
-/**
- * Authorizes every proxied request against the roles of the route it matched.
- *
- * <ul>
- *   <li>configured public path, or route roles contain {@code PUBLIC}: allowed without a token
- *   <li>route has no roles: denied (403), so a new route is closed until someone configures it
- *   <li>no valid token: 401
- *   <li>token lacks every listed role: 403
- * </ul>
- *
- * Methods are restricted per role by registering one route per method (each row has its own roles).
- */
+/** Route roles: PUBLIC = no token needed, none = denied, otherwise 401/403. */
 @Slf4j
 @Component
 public class RouteAuthorizationFilter implements GlobalFilter, Ordered {

@@ -94,7 +94,7 @@ public class RouteServiceImpl implements RouteService {
                         "404",
                         String.format("Route with id %s is not found", id))))
         .map(routeMapper::toRouteResponse)
-        // "not found" is the expected 404, not a database failure
+        // Not found is a 404, not a database failure
         .onErrorMap(e -> !(e instanceof AppException), e -> toRouteError("load", id, e));
   }
 
@@ -127,10 +127,6 @@ public class RouteServiceImpl implements RouteService {
         .onErrorMap(e -> !(e instanceof AppException), e -> toRouteError("update", id, e));
   }
 
-  /**
-   * Missing required columns, values too long, or a duplicate route are the caller's input: 400
-   * with the detail logged at WARN. Anything else is a database failure: 500, logged at ERROR.
-   */
   private static AppException toRouteError(String action, Long id, Throwable e) {
     if (e instanceof DataIntegrityViolationException) {
       log.warn(

@@ -1,15 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!--
-  Shared logback setup for every Dwell service. Include it from each service's logback-spring.xml
-  after Boot's defaults.xml.
-
-  * CONSOLE and FILE use Boot's structured encoder with com.neo.logging.DwellJsonLogFormatter
-    (set via logging.structured.format.console / .file).
-  * Both are wrapped in AsyncAppender with neverBlock=true: request threads (including Netty event
-    loops) never wait on log I/O; if the queue is ever full, events are dropped instead of blocking.
-  * FILE is the rolling JSON file that Grafana Alloy tails and ships to Loki, so the services never
-    depend on Loki being up.
--->
+<!-- Shared async JSON console + file appenders; Alloy ships the file to Loki. -->
 <included>
 	<include resource="org/springframework/boot/logging/logback/structured-console-appender.xml"/>
 	<include resource="org/springframework/boot/logging/logback/structured-file-appender.xml"/>

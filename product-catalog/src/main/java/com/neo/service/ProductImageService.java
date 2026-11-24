@@ -7,7 +7,6 @@ import org.springframework.web.multipart.MultipartFile;
 
 public interface ProductImageService {
 
-  /** Uploads the file to MinIO, appends it to the gallery and queues thumbnail generation. */
   ProductImageResponse addImageToProduct(UUID productId, MultipartFile file) throws Exception;
 
   List<ProductImageResponse> getImages(UUID productId);

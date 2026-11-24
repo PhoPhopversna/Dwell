@@ -7,10 +7,6 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.Ordered;
 
-/**
- * Correlation id + request/response logging. Runs before every other filter (including the
- * gateway-secret check), so even rejected requests are logged with the id.
- */
 @Configuration
 public class LoggingConfig {
 

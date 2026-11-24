@@ -28,11 +28,9 @@ public class AttributeDefinition {
   @JoinColumn(name = "category_id", nullable = false)
   private Category category;
 
-  /** Machine-readable name used as the key inside Product.attributes, e.g. "screen_size". */
   @Column(name = "attr_key", nullable = false, length = 60)
   private String key;
 
-  /** Human-readable label shown on screen, e.g. "Screen size (inches)". */
   @Column(nullable = false, length = 120)
   private String label;
 

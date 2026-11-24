@@ -21,14 +21,13 @@ spring:
       acks: all
       properties:
         enable.idempotence: true
-        # adds X-Correlation-ID (from MDC) to every produced record
+        # Adds X-Correlation-ID to every produced record
         interceptor.classes: com.neo.config.logging.CorrelationIdProducerInterceptor
         spring.json.add.type.headers: true
     consumer:
       group-id: default-group
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      # A message that isn't valid JSON for its type goes to the DLT instead of blocking the
-      # partition (the listener would otherwise fail on it forever). See KafkaErrorHandlingConfig.
+      # Undeserializable messages go to the DLT instead of blocking the partition
       value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
       auto-offset-reset: earliest
       enable-auto-commit: false
@@ -41,7 +40,6 @@ spring:
       concurrency: 3
 
 app:
-  # Loki "environment" label + JSON field. e.g. local, dev, staging, prod
   environment: ${APP_ENV:local}
   kafka:
     partitions: 3
@@ -58,7 +56,6 @@ app:
       dlt: alert-topic.DLT
       group-id: alert-group
 
-  # Only accept requests forwarded by the API gateway (it sets this header + secret).
   gateway-auth:
     enabled: ${GATEWAY_AUTH_ENABLED:true}
     header-name: X-Gateway-Secret
@@ -81,8 +78,6 @@ springdoc:
   packages-to-scan: com.neo.controller
 
 logging:
-  # One JSON object per line (see common-logging DwellJsonLogFormatter), on console and in
-  # ${LOG_DIR}/<service>.log, which Grafana Alloy tails and ships to Loki.
   structured:
     format:
       console: ${LOG_CONSOLE_FORMAT:com.neo.logging.DwellJsonLogFormatter}
@@ -97,8 +92,7 @@ logging:
   level:
     root: ${LOG_LEVEL_ROOT:INFO}
     com.neo: ${LOG_LEVEL_APP:INFO}
-    # request/response lines (com.neo.logging.AccessLogger); DEBUG also logs "Request received"
     com.neo.logging.access: ${LOG_LEVEL_ACCESS:INFO}
     org.apache.kafka: WARN
-    # Unhandled exceptions are already logged once (stack trace + correlationId) by the access filter.
+    # Unhandled exceptions are already logged once by the access filter
     org.apache.catalina.core.ContainerBase.[Tomcat].[localhost].[/].[dispatcherServlet]: OFF

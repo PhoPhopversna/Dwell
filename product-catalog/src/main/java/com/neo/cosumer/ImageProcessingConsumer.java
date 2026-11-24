@@ -51,7 +51,6 @@ public class ImageProcessingConsumer {
   @Transactional
   public void handle(ProductImageUploadedEvent event, Acknowledgment ack) {
 
-    // 1. Skip early if the image was deleted before we started
     if (!productImageRepository.existsById(event.productImageId())) {
       log.info("Image {} already deleted, skipping thumbnail", event.productImageId());
       ack.acknowledge();
@@ -68,7 +67,7 @@ public class ImageProcessingConsumer {
 
         BufferedImage img = ImageIO.read(original);
         if (img == null) {
-          // Not a readable image (corrupt, or a format ImageIO can't decode): retrying won't help.
+          // Not a readable image: retrying won't help
           log.warn(
               "Image {} ({}) is not a readable image; marking it FAILED",
               event.productImageId(),
@@ -119,12 +118,10 @@ public class ImageProcessingConsumer {
       throw new RuntimeException("Failed processing image " + event.productImageId(), e);
 
     } catch (Exception e) {
-      // not acked: retried with backoff, then sent to the DLT (see KafkaErrorHandlingConfig)
       throw new RuntimeException("Failed processing image " + event.productImageId(), e);
     }
   }
 
-  /** Marks the image FAILED and tells the frontend, so it doesn't wait for a thumbnail forever. */
   public void markFailed(ProductImageUploadedEvent event) {
     if (productImageRepository.updateStatus(event.productImageId(), ProductImage.ImageStatus.FAILED)
         > 0) {
@@ -140,7 +137,6 @@ public class ImageProcessingConsumer {
       removeQuietly(event.objectName());
       removeQuietly(event.thumbnailObjectName());
 
-      // Tell the frontend right away; the file cleanup doesn't need to block the UI
       messagingTemplate.convertAndSend(
           "/topic/products/" + event.productId(),
           Map.of("imageId", event.productImageId(), "status", "DELETED"));
@@ -149,7 +145,7 @@ public class ImageProcessingConsumer {
       log.info("Cleaned up MinIO files for image {}", event.productImageId());
 
     } catch (Exception e) {
-      // don't ack; rethrow so the error handler retries, then sends it to the DLT
+      // Not acked: retried, then sent to the DLT
       throw new RuntimeException("Failed cleaning up image " + event.productImageId(), e);
     }
   }

@@ -5,14 +5,6 @@ import org.slf4j.LoggerFactory;
 import org.slf4j.event.Level;
 import org.slf4j.spi.LoggingEventBuilder;
 
-/**
- * Emits the single request/response log line per request per service. Used only by the web filters,
- * so a request is logged once per service no matter how many layers it passes through.
- *
- * <p>Level by outcome: 2xx/3xx INFO, 4xx WARN, 5xx ERROR. Logs method, path, status, duration and,
- * when enabled, the query string, the text/JSON request body and the text/JSON response body, all
- * with sensitive values masked by {@link RequestDataMasker}. Headers are never logged.
- */
 public final class AccessLogger {
 
   public static final String LOGGER_NAME = "com.neo.logging.access";
@@ -31,12 +23,10 @@ public final class AccessLogger {
     }
   }
 
-  /** Masked request data for the access line; any field may be null (then it is omitted). */
   public record RequestData(String query, String contentType, String body) {
     public static final RequestData NONE = new RequestData(null, null, null);
   }
 
-  /** Masked response data for the access line; null body = not logged. */
   public record ResponseData(String contentType, String body) {
     public static final ResponseData NONE = new ResponseData(null, null);
   }

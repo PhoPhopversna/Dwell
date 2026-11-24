@@ -46,15 +46,12 @@ public class RateLimitServiceImpl implements RateLimitService {
 
   @PostConstruct
   public void loadPatternCache() {
-    // startup load: no request or scheduler, so give it its own correlation id
     CorrelationContext.runWith(CorrelationId.generate(), this::refreshPatternCache);
   }
 
   @Scheduled(fixedDelay = 60_000)
   public void refreshPatternCache() {
-    // Work and logging happen in operators (doOnNext/doOnError), not in subscribe() callbacks:
-    // Reactor restores the MDC (this run's correlation id, captured below from the scheduler
-    // thread) inside operators on the DB thread, but not inside subscribe() lambdas.
+    // Log in operators, not subscribe(): Reactor restores the MDC only inside operators.
     routeRepository
         .findAllByPathPatternIsNotNull()
         .collectList()
@@ -88,7 +85,7 @@ public class RateLimitServiceImpl implements RateLimitService {
         .findFirstByPathAndMethod(normalizedPath, method)
         .flatMap(
             routeConfig -> {
-              // null or 0 (the column default) means "no rate limit"
+              // null or 0 means no rate limit
               if (routeConfig.getRateLimit() == null
                   || routeConfig.getRateLimit() <= 0
                   || routeConfig.getRateLimitDuration() == null

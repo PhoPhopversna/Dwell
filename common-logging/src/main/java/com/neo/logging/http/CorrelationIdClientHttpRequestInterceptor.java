@@ -8,12 +8,6 @@ import org.springframework.http.client.ClientHttpRequestExecution;
 import org.springframework.http.client.ClientHttpRequestInterceptor;
 import org.springframework.http.client.ClientHttpResponse;
 
-/**
- * Adds the current correlation id (from the MDC) as {@code X-Correlation-ID} to outgoing {@code
- * RestTemplate} / {@code RestClient} calls. Registered automatically on templates/clients built
- * from Spring Boot's {@code RestTemplateBuilder} and {@code RestClient.Builder}. A header set
- * explicitly by the caller is never overwritten.
- */
 public class CorrelationIdClientHttpRequestInterceptor implements ClientHttpRequestInterceptor {
 
   @Override

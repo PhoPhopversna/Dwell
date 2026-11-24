@@ -40,7 +40,6 @@ class CorrelationIdWebFilterTest {
     MDC.clear();
   }
 
-  /** Runs the filter; the chain records what downstream code would see. */
   private record Run(
       MockServerWebExchange exchange,
       String downstreamHeader,
@@ -210,9 +209,6 @@ class CorrelationIdWebFilterTest {
     assertThat(value(logs.singleAccessCompleted(), "requestBody")).isNull();
   }
 
-  // ---------- response body ----------
-
-  /** Runs {@code f} with a handler that writes {@code body} with the given headers. */
   private static MockServerWebExchange respond(
       CorrelationIdWebFilter f, String contentType, String contentEncoding, String body) {
     MockServerWebExchange exchange =

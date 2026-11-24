@@ -7,10 +7,7 @@ import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import org.slf4j.LoggerFactory;
 
-/**
- * Captures events from the root logger. Freezes each event's MDC/arguments at log time (logback
- * otherwise reads the MDC lazily), so assertions see what was in context when the line was logged.
- */
+/** Captures root-logger events, freezing each event's MDC at log time. */
 public final class CapturedLogs extends AppenderBase<ILoggingEvent> implements AutoCloseable {
 
   private final List<ILoggingEvent> events = new CopyOnWriteArrayList<>();

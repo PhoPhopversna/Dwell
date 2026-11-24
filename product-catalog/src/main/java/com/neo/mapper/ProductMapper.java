@@ -24,11 +24,9 @@ public abstract class ProductMapper {
       expression = "java(request.getStatus() != null ? request.getStatus() : Product.Status.DRAFT)")
   @Mapping(target = "createdAt", ignore = true)
   @Mapping(target = "updatedAt", ignore = true)
-  // images arrive as MultipartFiles in the controller and are attached in
-  // ProductService after upload — the mapper never sees them.
+  // Images are attached in ProductService after upload
   @Mapping(target = "images", ignore = true)
-  // variants need entity-specific logic (e.g. SKU generation, stock init)
-  // that belongs in ProductService, not a generated mapper — created explicitly there.
+  // Variants need entity-specific logic, so ProductService creates them
   @Mapping(target = "variants", ignore = true)
   public abstract Product toEntity(ProductRequest request);
 

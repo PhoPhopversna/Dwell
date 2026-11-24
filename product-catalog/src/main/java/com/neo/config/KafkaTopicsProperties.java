@@ -18,7 +18,6 @@ public class KafkaTopicsProperties {
     private Integer partitions;
     private Short replicas;
 
-    // getters/setters
     public String getName() {
       return name;
     }

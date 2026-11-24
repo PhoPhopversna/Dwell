@@ -8,11 +8,6 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
-/**
- * Stamps every forwarded request with the shared secret that downstream services (e.g.
- * product-catalog) require, so they can reject requests that bypass the gateway. Any value sent by
- * the client is overwritten.
- */
 @Component
 public class GatewaySecretHeaderFilter implements GlobalFilter, Ordered {
 

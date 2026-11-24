@@ -7,12 +7,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 
-/**
- * Publishes domain events. Callers run after their database transaction has committed, so a failed
- * publish must not fail the request (the data is already saved and a client retry would duplicate
- * it). Every failure is logged at ERROR with topic, key and the request's correlation id, so the
- * missing event can be found and replayed.
- */
+/** Runs after commit, so a failed publish is logged instead of failing the request. */
 @Slf4j
 @Service
 public class KafkaPublisher {
@@ -46,7 +41,7 @@ public class KafkaPublisher {
 
   private void send(String topic, String key, Object event) {
     String type = event == null ? "null" : event.getClass().getSimpleName();
-    // The send callback runs on the producer's I/O thread: carry the request's id over.
+    // The callback runs on the producer thread: carry the request's id over
     String correlationId = CorrelationId.current();
     try {
       kafkaTemplate
@@ -69,7 +64,6 @@ public class KafkaPublisher {
                         }
                       }));
     } catch (RuntimeException ex) {
-      // Synchronous failure: serialization error, or broker metadata not available in time.
       log.error("Failed to publish {} to topic {} (key {})", type, topic, key, ex);
     }
   }

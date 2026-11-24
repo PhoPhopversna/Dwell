@@ -14,10 +14,6 @@ import org.springframework.web.server.WebFilter;
 import org.springframework.web.server.WebFilterChain;
 import reactor.core.publisher.Mono;
 
-/**
- * Rejects requests that do not carry the gateway's shared secret, so clients must go through the
- * API gateway (which enforces JWT + roles) instead of calling this service directly.
- */
 @Slf4j
 public class GatewayAuthWebFilter implements WebFilter, Ordered {
 
@@ -36,7 +32,7 @@ public class GatewayAuthWebFilter implements WebFilter, Ordered {
 
   @Override
   public int getOrder() {
-    // Right after CorrelationFilter, before Spring Security.
+    // Right after the correlation id filter, before Spring Security.
     return Ordered.HIGHEST_PRECEDENCE + 1;
   }
 

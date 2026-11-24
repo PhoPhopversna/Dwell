@@ -9,11 +9,6 @@ import org.springframework.http.server.reactive.ServerHttpResponse;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
-/**
- * The only auth error bodies the gateway sends. They are deliberately general: which role a route
- * needs, how routes are configured, and why a token failed to parse are logged with the request's
- * correlation id, never returned to the client.
- */
 final class SecurityResponses {
 
   static final String AUTHENTICATION_REQUIRED = "Authentication required";
@@ -22,14 +17,9 @@ final class SecurityResponses {
 
   private SecurityResponses() {}
 
-  /**
-   * @param wwwAuthenticate RFC 6750 challenge without error_description (no parser/decoder detail)
-   */
   static Mono<Void> write(
       ServerWebExchange exchange, HttpStatus status, String message, String wwwAuthenticate) {
-    // Deferred: Spring Security builds some of these Monos eagerly without subscribing to them
-    // (e.g. the authentication fallback when an authenticated user is denied), so nothing may
-    // touch the response until subscription.
+    // Deferred: Spring Security builds some of these Monos eagerly without subscribing.
     return Mono.defer(() -> doWrite(exchange, status, message, wwwAuthenticate));
   }
 

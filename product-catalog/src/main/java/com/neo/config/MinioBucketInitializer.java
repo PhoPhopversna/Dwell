@@ -10,12 +10,7 @@ import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.stereotype.Component;
 
-/**
- * Ensures the image bucket exists and is anonymously readable. Image URLs are returned to the
- * frontend as plain links ({@code <minio.url>/<bucket>/<object>}), so the browser must be able to
- * GET objects without credentials. Only {@code s3:GetObject} is granted: anonymous users can't list
- * the bucket or write to it.
- */
+/** Anonymous read-only (s3:GetObject) so image URLs work as plain links. */
 @Slf4j
 @Component
 public class MinioBucketInitializer implements ApplicationRunner {
@@ -58,7 +53,7 @@ public class MinioBucketInitializer implements ApplicationRunner {
               .build());
       log.info("Applied public-read policy to MinIO bucket {}", bucket);
     } catch (Exception e) {
-      // Don't block startup if MinIO is down; uploads will fail loudly on their own.
+      // Don't block startup if MinIO is down; uploads fail on their own
       log.warn(
           "Could not initialise MinIO bucket {}; images may not be publicly readable", bucket, e);
     }

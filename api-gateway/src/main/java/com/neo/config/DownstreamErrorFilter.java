@@ -19,18 +19,6 @@ import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 import reactor.netty.http.client.PrematureCloseException;
 
-/**
- * Turns "the downstream service could not be reached" into a proper gateway answer instead of a
- * generic 500:
- *
- * <ul>
- *   <li>connection refused / connect timeout / unknown host → 503 Service Unavailable
- *   <li>connection closed before a response arrived → 502 Bad Gateway
- * </ul>
- *
- * The client gets the standard error body with its correlation id; the log gets the route and
- * target. A response timeout is already answered by the gateway itself with 504.
- */
 @Slf4j
 @Component
 public class DownstreamErrorFilter implements GlobalFilter, Ordered {
@@ -40,7 +28,7 @@ public class DownstreamErrorFilter implements GlobalFilter, Ordered {
 
   @Override
   public int getOrder() {
-    // Wraps every other gateway filter, including the routing filter that makes the call.
+    // Wraps every other gateway filter, including routing.
     return Ordered.HIGHEST_PRECEDENCE + 10;
   }
 
@@ -74,7 +62,7 @@ public class DownstreamErrorFilter implements GlobalFilter, Ordered {
     return response.writeWith(Mono.just(response.bufferFactory().wrap(body)));
   }
 
-  /** null = not a downstream connectivity failure. */
+  /** null = not a connectivity failure. */
   static HttpStatus statusFor(Throwable e) {
     for (Throwable t = e; t != null; t = t.getCause() == t ? null : t.getCause()) {
       if (t instanceof ConnectException || t instanceof UnknownHostException) {

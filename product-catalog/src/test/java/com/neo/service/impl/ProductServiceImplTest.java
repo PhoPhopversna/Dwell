@@ -168,7 +168,6 @@ class ProductServiceImplTest {
   @Nested
   class UpdateProduct {
 
-    /** Mirrors the real mapper for the fields updateProduct copies across. */
     private Product mapped(ProductRequest req) {
       Product p = new Product(req.getSku(), req.getName(), null, req.getBasePrice());
       p.setCostPrice(req.getCostPrice());
