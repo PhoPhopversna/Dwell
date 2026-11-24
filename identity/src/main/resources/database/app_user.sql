@@ -11,3 +11,6 @@ CREATE TABLE IF NOT EXISTS app_user (
     created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     created_by  VARCHAR(50) NOT NULL
 );
+ALTER TABLE app_user ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMP;
+-- Users created in the Keycloak console may have no email; they are added here on first login.
+ALTER TABLE app_user ALTER COLUMN email DROP NOT NULL;

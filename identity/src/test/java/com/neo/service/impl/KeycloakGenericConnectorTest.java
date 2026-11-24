@@ -63,4 +63,22 @@ class KeycloakGenericConnectorTest {
     assertThat(login(connectorAnswering(HttpStatus.OK, "{\"access_token\":\"x\"}")).block())
         .isEqualTo("{\"access_token\":\"x\"}");
   }
+
+  @Test
+  void invalidGrantIs401() {
+    String body = "{\"error\":\"invalid_grant\",\"error_description\":\"Token is not active\"}";
+    assertThatThrownBy(() -> login(connectorAnswering(HttpStatus.BAD_REQUEST, body)).block())
+        .isInstanceOf(AuthException.class)
+        .satisfies(
+            e -> assertThat(((AuthException) e).getStatus()).isEqualTo(HttpStatus.UNAUTHORIZED));
+  }
+
+  @Test
+  void otherBadRequestsStay400() {
+    String body = "{\"error\":\"invalid_request\",\"error_description\":\"Missing parameter\"}";
+    assertThatThrownBy(() -> login(connectorAnswering(HttpStatus.BAD_REQUEST, body)).block())
+        .isInstanceOf(AuthException.class)
+        .satisfies(
+            e -> assertThat(((AuthException) e).getStatus()).isEqualTo(HttpStatus.BAD_REQUEST));
+  }
 }

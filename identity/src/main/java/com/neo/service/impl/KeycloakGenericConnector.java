@@ -2,6 +2,7 @@ package com.neo.service.impl;
 
 import com.neo.exception.ConflictException;
 import java.util.function.BiFunction;
+import java.util.regex.Pattern;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
@@ -18,6 +19,10 @@ import reactor.core.publisher.Mono;
 @Slf4j
 @Service
 public class KeycloakGenericConnector {
+
+  /** Keycloak's 400 for a revoked/expired refresh token or a login it refuses: really a 401. */
+  private static final Pattern INVALID_GRANT =
+      Pattern.compile("\"error\"\\s*:\\s*\"invalid_grant\"");
 
   private final WebClient webClient;
 
@@ -201,6 +206,11 @@ public class KeycloakGenericConnector {
                     .flatMap(
                         body -> {
                           log.warn("4xx error from Keycloak [{}]: {}", url, body);
+                          if (INVALID_GRANT.matcher(body).find()) {
+                            return Mono.error(
+                                errorFactory.apply(
+                                    "Invalid or expired credentials", HttpStatus.UNAUTHORIZED));
+                          }
                           return Mono.error(
                               errorFactory.apply("Invalid Request", HttpStatus.BAD_REQUEST));
                         }))

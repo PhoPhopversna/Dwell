@@ -11,4 +11,9 @@ public class AuthException extends RuntimeException {
     super(message);
     this.status = status;
   }
+
+  public AuthException(String message, HttpStatus status, Throwable cause) {
+    super(message, cause);
+    this.status = status;
+  }
 }

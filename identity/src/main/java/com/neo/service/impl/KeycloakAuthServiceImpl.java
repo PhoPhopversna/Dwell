@@ -3,6 +3,7 @@ package com.neo.service.impl;
 import com.neo.config.KeycloakProperties;
 import com.neo.dto.AppUserRequest;
 import com.neo.dto.RegisterRequest;
+import com.neo.dto.TokenClaims;
 import com.neo.dto.TokenResponse;
 import com.neo.dto.UserAuditRequest;
 import com.neo.exception.AuthException;
@@ -13,6 +14,7 @@ import java.net.URI;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.BiFunction;
+import java.util.function.Function;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -55,6 +57,75 @@ public class KeycloakAuthServiceImpl implements KeycloakAuthService {
 
   @Override
   public Mono<TokenResponse> login(String username, String password) {
+    return withCorrelationId(
+        correlationId ->
+            requestLoginTokens(username, password)
+                .onErrorResume(
+                    AuthException.class,
+                    e ->
+                        userService
+                            .saveUserAuditLog(
+                                new UserAuditRequest(
+                                    null,
+                                    "LOGIN",
+                                    false,
+                                    "Login failed for " + username + ": " + e.getMessage(),
+                                    correlationId))
+                            .then(Mono.error(e)))
+                .flatMap(tokens -> syncUser(tokens, "LOGIN", correlationId)));
+  }
+
+  @Override
+  public Mono<TokenResponse> refresh(String refreshToken) {
+    return withCorrelationId(
+        correlationId ->
+            requestRefreshedTokens(refreshToken)
+                .flatMap(tokens -> syncUser(tokens, "REFRESH", correlationId)));
+  }
+
+  @Override
+  public Mono<Void> logout(String refreshToken) {
+    return withCorrelationId(
+        correlationId ->
+            revokeSession(refreshToken)
+                .then(Mono.defer(() -> auditLogout(refreshToken, correlationId))));
+  }
+
+  /** Tokens are only returned once the local user is in sync; otherwise the session is revoked. */
+  private Mono<TokenResponse> syncUser(TokenResponse tokens, String action, String correlationId) {
+    return Mono.fromCallable(() -> TokenClaims.fromJwt(tokens.getAccessToken()))
+        .flatMap(claims -> userService.syncAuthenticatedUser(claims, action, correlationId))
+        .thenReturn(tokens)
+        .onErrorResume(e -> revokeQuietly(tokens.getRefreshToken()).then(Mono.error(e)));
+  }
+
+  private Mono<Void> revokeQuietly(String refreshToken) {
+    if (refreshToken == null) {
+      return Mono.empty();
+    }
+    return revokeSession(refreshToken)
+        .onErrorResume(
+            e -> {
+              log.warn("Could not revoke Keycloak session: {}", e.getMessage());
+              return Mono.empty();
+            });
+  }
+
+  private Mono<Void> auditLogout(String refreshToken, String correlationId) {
+    try {
+      return userService.auditLogout(TokenClaims.fromJwt(refreshToken), correlationId);
+    } catch (IllegalArgumentException e) {
+      log.warn("Logout succeeded but the refresh token is unreadable: {}", e.getMessage());
+      return Mono.empty();
+    }
+  }
+
+  private static <T> Mono<T> withCorrelationId(Function<String, Mono<T>> body) {
+    return Mono.deferContextual(
+        ctx -> body.apply(ctx.getOrDefault(CORRELATION_ID_MDC_KEY, UUID.randomUUID().toString())));
+  }
+
+  private Mono<TokenResponse> requestLoginTokens(String username, String password) {
     log.debug("Attempting login for user: {}", username);
 
     MultiValueMap<String, String> formData = new LinkedMultiValueMap<>();
@@ -74,8 +145,7 @@ public class KeycloakAuthServiceImpl implements KeycloakAuthService {
         AUTH_ERROR_FACTORY);
   }
 
-  @Override
-  public Mono<TokenResponse> refresh(String refreshToken) {
+  private Mono<TokenResponse> requestRefreshedTokens(String refreshToken) {
     log.debug("Refreshing token");
 
     MultiValueMap<String, String> formData = new LinkedMultiValueMap<>();
@@ -93,8 +163,7 @@ public class KeycloakAuthServiceImpl implements KeycloakAuthService {
         AUTH_ERROR_FACTORY);
   }
 
-  @Override
-  public Mono<Void> logout(String refreshToken) {
+  private Mono<Void> revokeSession(String refreshToken) {
     log.debug("Logging out user");
 
     MultiValueMap<String, String> formData = new LinkedMultiValueMap<>();
@@ -141,8 +210,9 @@ public class KeycloakAuthServiceImpl implements KeycloakAuthService {
         ctx -> {
           String correlationId =
               ctx.getOrDefault(CORRELATION_ID_MDC_KEY, UUID.randomUUID().toString());
-          return keycloakAdminService
-              .getAccessTokenCache()
+          return userService
+              .ensureAvailable(request.getUserName(), request.getEmail())
+              .then(Mono.defer(keycloakAdminService::getAccessTokenCache))
               .flatMap(token -> keycloakUserRegister(token, body))
               .onErrorResume(
                   AuthException.class,
@@ -163,7 +233,7 @@ public class KeycloakAuthServiceImpl implements KeycloakAuthService {
                                   null,
                                   "REGISTER",
                                   false,
-                                  "Keycloak failed: " + ex.getMessage(),
+                                  "Register failed: " + ex.getMessage(),
                                   correlationId))
                           .then(Mono.error(ex)))
               .flatMap(
@@ -176,11 +246,72 @@ public class KeycloakAuthServiceImpl implements KeycloakAuthService {
                             .active(ENABLE)
                             .firstName(request.getFirstName())
                             .lastName(request.getLastName())
-                            .createdBy(request.getCreatedBy())
+                            .createdBy(
+                                request.getCreatedBy() != null
+                                    ? request.getCreatedBy()
+                                    : "SELF_REGISTER")
                             .build();
-                    return userService.saveUser(appUserRequest, "REGISTER", correlationId);
+                    return userService
+                        .saveUser(appUserRequest, "REGISTER", correlationId)
+                        .onErrorResume(
+                            e ->
+                                rollbackKeycloakUser(
+                                        keycloakId, request.getUserName(), correlationId)
+                                    .then(Mono.error(e)));
                   });
         });
+  }
+
+  /** Deletes the Keycloak user whose local row could not be saved; 404 means already gone. */
+  private Mono<Void> rollbackKeycloakUser(
+      String keycloakId, String username, String correlationId) {
+    String url = keycloakProperties.getUserByIdEndpoint(keycloakId);
+    return keycloakAdminService
+        .getAccessTokenCache()
+        .flatMap(token -> keycloakGenericConnector.delete(url, token, AUTH_ERROR_FACTORY))
+        .onErrorResume(
+            AuthException.class,
+            e ->
+                e.getStatus() == HttpStatus.UNAUTHORIZED
+                    ? keycloakAdminService
+                        .forceRefresh()
+                        .flatMap(
+                            token ->
+                                keycloakGenericConnector.delete(url, token, AUTH_ERROR_FACTORY))
+                    : Mono.error(e))
+        .onErrorResume(
+            e -> e instanceof AuthException ae && ae.getStatus() == HttpStatus.NOT_FOUND,
+            e -> Mono.empty())
+        .then(
+            Mono.defer(
+                () -> {
+                  log.warn(
+                      "Rolled back Keycloak user {} ({}) after the local save failed",
+                      keycloakId,
+                      username);
+                  return userService.saveUserAuditLog(
+                      new UserAuditRequest(
+                          null,
+                          "REGISTER_ROLLBACK",
+                          true,
+                          "Deleted Keycloak user " + keycloakId,
+                          correlationId));
+                }))
+        .onErrorResume(
+            e -> {
+              log.error(
+                  "Could not roll back Keycloak user {} ({}); delete it manually",
+                  keycloakId,
+                  username,
+                  e);
+              return userService.saveUserAuditLog(
+                  new UserAuditRequest(
+                      null,
+                      "REGISTER_ROLLBACK_FAILED",
+                      false,
+                      "Keycloak user " + keycloakId + " left behind",
+                      correlationId));
+            });
   }
 
   private Mono<String> keycloakUserRegister(String token, Map<String, Object> body) {
