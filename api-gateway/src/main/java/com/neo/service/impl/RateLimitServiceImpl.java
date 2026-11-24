@@ -1,5 +1,7 @@
 package com.neo.service.impl;
 
+import com.neo.logging.CorrelationId;
+import com.neo.logging.context.CorrelationContext;
 import com.neo.repository.RouteRepository;
 import com.neo.service.RateLimitService;
 import jakarta.annotation.PostConstruct;
@@ -44,15 +46,19 @@ public class RateLimitServiceImpl implements RateLimitService {
 
   @PostConstruct
   public void loadPatternCache() {
-    refreshPatternCache();
+    // startup load: no request or scheduler, so give it its own correlation id
+    CorrelationContext.runWith(CorrelationId.generate(), this::refreshPatternCache);
   }
 
   @Scheduled(fixedDelay = 60_000)
   public void refreshPatternCache() {
+    // Work and logging happen in operators (doOnNext/doOnError), not in subscribe() callbacks:
+    // Reactor restores the MDC (this run's correlation id, captured below from the scheduler
+    // thread) inside operators on the DB thread, but not inside subscribe() lambdas.
     routeRepository
         .findAllByPathPatternIsNotNull()
         .collectList()
-        .subscribe(
+        .doOnNext(
             routes -> {
               Map<Pattern, String> updated = new LinkedHashMap<>();
               routes.forEach(
@@ -67,15 +73,17 @@ public class RateLimitServiceImpl implements RateLimitService {
                   });
               pathPatternCache = updated;
               log.info("Path pattern cache refreshed: {} patterns loaded", updated.size());
-            },
-            err -> log.error("Failed to refresh path pattern cache", err));
+            })
+        .doOnError(err -> log.error("Failed to refresh path pattern cache", err))
+        .onErrorComplete() // logged above; the next scheduled run retries
+        .contextCapture()
+        .subscribe();
   }
 
   @Override
   public Mono<Boolean> verifyRatingLimit(String path, String method, String identifier) {
     final String normalizedPath = normalizePath(path);
-    log.info("=========== Verify Rate Limit =============");
-    log.info("Request : {} , {}, {}", path, method, identifier);
+    log.debug("Rate limit check {} {}", method, path);
     return routeRepository
         .findFirstByPathAndMethod(normalizedPath, method)
         .flatMap(
@@ -88,14 +96,9 @@ public class RateLimitServiceImpl implements RateLimitService {
                 return Mono.just(true);
               }
 
-              log.info(
-                  "Rate limiting — path: {}, method: {}, identifier: {}",
-                  normalizedPath,
-                  method,
-                  identifier);
+              log.debug("Rate limit applies to {} {}", method, normalizedPath);
 
               String redisKey = String.format("%s:%s:%s", identifier, normalizedPath, method);
-              log.info("Redis key: {}", redisKey);
 
               return Mono.fromCallable(
                       () ->

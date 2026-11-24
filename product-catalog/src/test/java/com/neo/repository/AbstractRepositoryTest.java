@@ -6,9 +6,9 @@ import org.springframework.boot.testcontainers.service.connection.ServiceConnect
 import org.testcontainers.containers.PostgreSQLContainer;
 
 /**
- * JPA slice backed by a real PostgreSQL (entities use jsonb columns). The container is a
- * singleton shared by all repository test classes so the cached Spring context stays valid;
- * Testcontainers' Ryuk sidecar removes it when the JVM exits.
+ * JPA slice backed by a real PostgreSQL (entities use jsonb columns). The container is a singleton
+ * shared by all repository test classes so the cached Spring context stays valid; Testcontainers'
+ * Ryuk sidecar removes it when the JVM exits.
  */
 @DataJpaTest(properties = "spring.jpa.hibernate.ddl-auto=create-drop")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)

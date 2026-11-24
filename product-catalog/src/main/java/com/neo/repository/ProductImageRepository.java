@@ -22,4 +22,9 @@ public interface ProductImageRepository extends JpaRepository<ProductImage, UUID
       @Param("id") UUID id,
       @Param("thumbnailUrl") String thumbnailUrl,
       @Param("status") ProductImage.ImageStatus status);
+
+  @Modifying
+  @Transactional
+  @Query("update ProductImage i set i.status = :status where i.id = :id")
+  int updateStatus(@Param("id") UUID id, @Param("status") ProductImage.ImageStatus status);
 }

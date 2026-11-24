@@ -100,12 +100,15 @@ public class RoleServiceImpl implements RoleService {
                         status -> status.is4xxClientError(),
                         resp ->
                             resp.bodyToMono(String.class)
+                                .defaultIfEmpty("")
                                 .flatMap(
                                     b ->
                                         Mono.error(
                                             new AuthException(
                                                 "Failed to delete role: " + b,
-                                                HttpStatus.BAD_REQUEST))))
+                                                resp.statusCode().value() == 404
+                                                    ? HttpStatus.NOT_FOUND
+                                                    : HttpStatus.BAD_REQUEST))))
                     .bodyToMono(Void.class));
   }
 
@@ -151,12 +154,15 @@ public class RoleServiceImpl implements RoleService {
                                     status -> status.is4xxClientError(),
                                     resp ->
                                         resp.bodyToMono(String.class)
+                                            .defaultIfEmpty("")
                                             .flatMap(
                                                 b ->
                                                     Mono.error(
                                                         new AuthException(
                                                             "Failed to remove roles: " + b,
-                                                            HttpStatus.BAD_REQUEST))))
+                                                            resp.statusCode().value() == 404
+                                                                ? HttpStatus.NOT_FOUND
+                                                                : HttpStatus.BAD_REQUEST))))
                                 .bodyToMono(Void.class)));
   }
 
@@ -211,6 +217,7 @@ public class RoleServiceImpl implements RoleService {
             HttpStatusCode::isError,
             resp ->
                 resp.bodyToMono(String.class)
+                    .defaultIfEmpty("")
                     .flatMap(
                         body ->
                             Mono.error(
@@ -230,12 +237,15 @@ public class RoleServiceImpl implements RoleService {
             HttpStatusCode::isError,
             resp ->
                 resp.bodyToMono(String.class)
+                    .defaultIfEmpty("")
                     .flatMap(
                         body ->
                             Mono.error(
                                 new AuthException(
                                     "Failed to fetch roles: " + body,
-                                    HttpStatus.INTERNAL_SERVER_ERROR))))
+                                    resp.statusCode().value() == 404
+                                        ? HttpStatus.NOT_FOUND
+                                        : HttpStatus.INTERNAL_SERVER_ERROR))))
         .bodyToFlux(RoleRepresentation.class)
         .collectList()
         .defaultIfEmpty(Collections.emptyList());

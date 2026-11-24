@@ -4,6 +4,7 @@ import com.neo.dto.CustomApiResponse;
 import com.neo.dto.ImagePositionRequest;
 import com.neo.dto.ProductImageResponse;
 import com.neo.service.ProductImageService;
+import com.neo.service.validator.ImageFileValidator;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -34,6 +35,7 @@ public class ProductImageController {
   public ResponseEntity<CustomApiResponse<List<ProductImageResponse>>> upload(
       @PathVariable UUID productId, @RequestPart("images") List<MultipartFile> images)
       throws Exception {
+    ImageFileValidator.validate(images); // reject the batch before any file is stored
     List<ProductImageResponse> uploaded = new ArrayList<>();
     for (MultipartFile image : images) {
       uploaded.add(productImageService.addImageToProduct(productId, image));

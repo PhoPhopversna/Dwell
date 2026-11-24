@@ -62,8 +62,6 @@ public class GatewayAuthFilter extends OncePerRequestFilter {
     response.setStatus(HttpStatus.FORBIDDEN.value());
     response.setContentType(MediaType.APPLICATION_JSON_VALUE);
     response.setCharacterEncoding(StandardCharsets.UTF_8.name());
-    objectMapper.writeValue(
-        response.getOutputStream(),
-        CustomApiResponse.error("Direct access is not allowed; use the API gateway"));
+    objectMapper.writeValue(response.getOutputStream(), CustomApiResponse.error("Access denied"));
   }
 }

@@ -22,6 +22,11 @@ spring:
 
   cloud:
     gateway:
+      # Without these a hung downstream service holds the request (and a connection) forever.
+      # Connect failure -> 503 (DownstreamErrorFilter), no response in time -> 504.
+      httpclient:
+        connect-timeout: ${GATEWAY_CONNECT_TIMEOUT_MS:5000}
+        response-timeout: ${GATEWAY_RESPONSE_TIMEOUT:30s}
       discovery:
         locator:
           enabled: false
@@ -50,6 +55,8 @@ spring:
           issuer-uri: ${KEYCLOAK_ISSUER:http://localhost:8080/realms/Dwell}
 
 app:
+  # Loki "environment" label + JSON field. e.g. local, dev, staging, prod
+  environment: ${APP_ENV:local}
   # Shared secret added to every forwarded request; downstream services reject requests without it.
   gateway-auth:
     header-name: X-Gateway-Secret
@@ -72,10 +79,24 @@ management:
       exposure:
         include: refresh,health,info,gateway,env
 
-# Optional: logging for debugging
 logging:
+  # One JSON object per line (see common-logging DwellJsonLogFormatter), on console and in
+  # ${LOG_DIR}/<service>.log, which Grafana Alloy tails and ships to Loki.
+  structured:
+    format:
+      console: ${LOG_CONSOLE_FORMAT:com.neo.logging.DwellJsonLogFormatter}
+      file: com.neo.logging.DwellJsonLogFormatter
+  file:
+    name: ${LOG_DIR:logs}/${spring.application.name}.log
+  logback:
+    rollingpolicy:
+      max-file-size: ${LOG_MAX_FILE_SIZE:50MB}
+      max-history: ${LOG_MAX_HISTORY:7}
+      total-size-cap: ${LOG_TOTAL_SIZE_CAP:1GB}
   level:
-    root: INFO
-    org.springframework.web: DEBUG
-  pattern:
-    console: "%d{yyyy-MM-dd HH:mm:ss} [%X{correlationId}] %-5level %logger - %msg%n"
+    root: ${LOG_LEVEL_ROOT:INFO}
+    com.neo: ${LOG_LEVEL_APP:INFO}
+    # request/response lines (com.neo.logging.AccessLogger); DEBUG also logs "Request received"
+    com.neo.logging.access: ${LOG_LEVEL_ACCESS:INFO}
+    # Unhandled errors are already logged once, with stack trace + correlationId, by the access filter.
+    org.springframework.boot.autoconfigure.web.reactive.error.AbstractErrorWebExceptionHandler: OFF

@@ -19,7 +19,8 @@ public class GatewayAuthConfig {
     FilterRegistrationBean<GatewayAuthFilter> registration =
         new FilterRegistrationBean<>(new GatewayAuthFilter(properties, objectMapper));
     registration.addUrlPatterns("/*");
-    registration.setOrder(Ordered.HIGHEST_PRECEDENCE);
+    // after the correlation-id filter, so rejected direct calls are logged with an id
+    registration.setOrder(Ordered.HIGHEST_PRECEDENCE + 1);
     return registration;
   }
 }

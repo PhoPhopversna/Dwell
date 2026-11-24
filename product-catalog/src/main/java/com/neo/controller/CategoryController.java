@@ -2,6 +2,7 @@ package com.neo.controller;
 
 import com.neo.dto.CategoryRequest;
 import com.neo.dto.CategoryResponse;
+import com.neo.dto.CustomApiResponse;
 import com.neo.service.CategoryService;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import java.net.URI;
@@ -22,34 +23,36 @@ public class CategoryController {
   }
 
   @GetMapping("/{id}")
-  public ResponseEntity<CategoryResponse> getCategoryById(@PathVariable UUID id) {
+  public ResponseEntity<CustomApiResponse<CategoryResponse>> getCategoryById(
+      @PathVariable UUID id) {
     CategoryResponse category = categoryService.getCategoryById(id);
-    return ResponseEntity.ok(category);
+    return ResponseEntity.ok(CustomApiResponse.ok(category));
   }
 
   @GetMapping()
-  public ResponseEntity<List<CategoryResponse>> getCategories() {
+  public ResponseEntity<CustomApiResponse<List<CategoryResponse>>> getCategories() {
     List<CategoryResponse> categories = categoryService.getCategories();
-    return ResponseEntity.ok(categories);
+    return ResponseEntity.ok(CustomApiResponse.ok(categories));
   }
 
   @PostMapping()
-  public ResponseEntity<CategoryResponse> postCategory(
+  public ResponseEntity<CustomApiResponse<CategoryResponse>> postCategory(
       @RequestBody CategoryRequest categoryRequest) {
     CategoryResponse created = categoryService.saveCategory(categoryRequest);
-    return ResponseEntity.created(URI.create("/api/categories/" + created.getId())).body(created);
+    return ResponseEntity.created(URI.create("/api/categories/" + created.getId()))
+        .body(CustomApiResponse.ok(created));
   }
 
   @PatchMapping("/{id}")
-  public ResponseEntity<CategoryResponse> patchCategory(
+  public ResponseEntity<CustomApiResponse<CategoryResponse>> patchCategory(
       @PathVariable UUID id, @RequestBody CategoryRequest categoryRequest) {
     CategoryResponse category = categoryService.updateCategory(id, categoryRequest);
-    return ResponseEntity.ok(category);
+    return ResponseEntity.ok(CustomApiResponse.ok(category));
   }
 
   @DeleteMapping("/{id}")
-  public ResponseEntity<String> deleteCategory(@PathVariable UUID id) {
+  public ResponseEntity<CustomApiResponse<String>> deleteCategory(@PathVariable UUID id) {
     categoryService.deleteCategory(id);
-    return ResponseEntity.ok("Delete Successfully");
+    return ResponseEntity.ok(CustomApiResponse.ok("Delete Successfully"));
   }
 }

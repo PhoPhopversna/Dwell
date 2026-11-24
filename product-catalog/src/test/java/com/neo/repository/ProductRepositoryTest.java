@@ -69,9 +69,7 @@ class ProductRepositoryTest extends AbstractRepositoryTest {
     assertThat(found.getVariants())
         .singleElement()
         .satisfies(v -> assertThat(v.getVariantAttributes()).containsEntry("size", "M"));
-    assertThat(found.getImages())
-        .extracting(ProductImage::getPosition)
-        .containsExactly(0, 1);
+    assertThat(found.getImages()).extracting(ProductImage::getPosition).containsExactly(0, 1);
   }
 
   @Test
@@ -94,7 +92,8 @@ class ProductRepositoryTest extends AbstractRepositoryTest {
     productRepository.saveAndFlush(new Product("DUP", "One", category, BigDecimal.ONE));
 
     assertThatThrownBy(
-            () -> productRepository.saveAndFlush(new Product("DUP", "Two", category, BigDecimal.ONE)))
+            () ->
+                productRepository.saveAndFlush(new Product("DUP", "Two", category, BigDecimal.ONE)))
         .isInstanceOf(DataIntegrityViolationException.class);
   }
 

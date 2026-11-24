@@ -3,6 +3,7 @@ package com.neo.service.impl;
 import com.neo.dto.CategoryRequest;
 import com.neo.dto.CategoryResponse;
 import com.neo.entity.Category;
+import com.neo.exception.AppException;
 import com.neo.mapper.CategoryMapper;
 import com.neo.repository.CategoryRepository;
 import com.neo.service.CategoryService;
@@ -12,6 +13,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -39,7 +41,7 @@ public class CategoryServiceImpl implements CategoryService {
     Category category =
         categoryRepository
             .findById(id)
-            .orElseThrow(() -> new EntityNotFoundException("Not Found :" + id));
+            .orElseThrow(() -> new EntityNotFoundException("Category not found: " + id));
     return categoryMapper.toResponse(category);
   }
 
@@ -83,7 +85,8 @@ public class CategoryServiceImpl implements CategoryService {
 
       if (newParentId != null) {
         if (newParentId.equals(id)) {
-          throw new IllegalArgumentException("A category cannot be its own parent");
+          throw new AppException(
+              HttpStatus.BAD_REQUEST, "CATEGORY_OWN_PARENT", "A category cannot be its own parent");
         }
 
         newParent =
@@ -94,7 +97,9 @@ public class CategoryServiceImpl implements CategoryService {
 
         for (Category ancestor = newParent; ancestor != null; ancestor = ancestor.getParent()) {
           if (ancestor.getId().equals(id)) {
-            throw new IllegalArgumentException(
+            throw new AppException(
+                HttpStatus.BAD_REQUEST,
+                "CATEGORY_CYCLE",
                 "Cannot move a category under one of its own descendants");
           }
         }
@@ -116,7 +121,7 @@ public class CategoryServiceImpl implements CategoryService {
     Category category =
         categoryRepository
             .findById(id)
-            .orElseThrow(() -> new EntityNotFoundException("Not Found :" + id));
+            .orElseThrow(() -> new EntityNotFoundException("Category not found: " + id));
     categoryRepository.delete(category);
   }
 }

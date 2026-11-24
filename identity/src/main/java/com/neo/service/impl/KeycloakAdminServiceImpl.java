@@ -78,6 +78,7 @@ public class KeycloakAdminServiceImpl {
             status -> status.is4xxClientError() || status.is5xxServerError(),
             resp ->
                 resp.bodyToMono(String.class)
+                    .defaultIfEmpty("")
                     .flatMap(
                         body ->
                             Mono.error(
@@ -105,6 +106,7 @@ public class KeycloakAdminServiceImpl {
             status -> status.is4xxClientError() || status.is5xxServerError(),
             resp ->
                 resp.bodyToMono(String.class)
+                    .defaultIfEmpty("")
                     .flatMap(
                         body ->
                             Mono.error(
@@ -134,6 +136,7 @@ public class KeycloakAdminServiceImpl {
             status -> status.is4xxClientError() || status.is5xxServerError(),
             resp ->
                 resp.bodyToMono(String.class)
+                    .defaultIfEmpty("")
                     .flatMap(
                         body ->
                             Mono.error(

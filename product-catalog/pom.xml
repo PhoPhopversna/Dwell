@@ -18,6 +18,13 @@
 	</properties>
 
 	<dependencies>
+		<!-- Shared JSON logging + correlation id -->
+		<dependency>
+			<groupId>com.neo</groupId>
+			<artifactId>common-logging</artifactId>
+			<version>${project.version}</version>
+		</dependency>
+
 		<!-- Web -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>

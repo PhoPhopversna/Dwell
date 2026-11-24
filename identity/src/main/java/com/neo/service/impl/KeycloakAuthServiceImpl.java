@@ -114,24 +114,29 @@ public class KeycloakAuthServiceImpl implements KeycloakAuthService {
   @Override
   public Mono<Void> register(RegisterRequest request) {
     final boolean ENABLE = true;
-    log.debug("Create User Request : {}", request);
+    log.debug("Registering user {}", request.getUserName());
 
-    Map<String, Object> body =
-        Map.of(
-            "username", request.getUserName(),
-            "email", request.getEmail(),
-            "firstName", request.getFirstName(),
-            "lastName", request.getLastName(),
-            "enabled", ENABLE,
-            "credentials",
-                request.getCredentials().stream()
-                    .map(
-                        c ->
-                            Map.of(
-                                "type", c.getType(),
-                                "value", c.getValue(),
-                                "temporary", c.getTemporary()))
-                    .toList());
+    // Optional fields (first/last name, temporary) may be absent: Map.of() rejects nulls.
+    Map<String, Object> body = new java.util.LinkedHashMap<>();
+    body.put("username", request.getUserName());
+    body.put("email", request.getEmail());
+    if (request.getFirstName() != null) {
+      body.put("firstName", request.getFirstName());
+    }
+    if (request.getLastName() != null) {
+      body.put("lastName", request.getLastName());
+    }
+    body.put("enabled", ENABLE);
+    body.put(
+        "credentials",
+        request.getCredentials().stream()
+            .map(
+                c ->
+                    Map.of(
+                        "type", c.getType(),
+                        "value", c.getValue(),
+                        "temporary", Boolean.TRUE.equals(c.getTemporary())))
+            .toList());
     return Mono.deferContextual(
         ctx -> {
           String correlationId =
@@ -205,9 +210,13 @@ public class KeycloakAuthServiceImpl implements KeycloakAuthService {
             response ->
                 response
                     .bodyToMono(String.class)
+                    .defaultIfEmpty("")
                     .flatMap(
                         errorBody -> {
-                          log.error("Keycloak 4xx error: {}", errorBody);
+                          log.warn(
+                              "Keycloak {} on register: {}",
+                              response.statusCode().value(),
+                              errorBody);
                           return Mono.error(
                               new AuthException("Authentication failed", HttpStatus.BAD_REQUEST));
                         }))

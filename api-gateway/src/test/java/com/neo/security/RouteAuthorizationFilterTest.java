@@ -120,4 +120,19 @@ class RouteAuthorizationFilterTest {
     Result r = run(HttpMethod.POST, "/identity/api/auth/login", route(""), null);
     assertThat(r.forwarded()).isTrue();
   }
+
+  @Test
+  void deniedResponsesNeverRevealRequiredRolesOrRouteConfig() {
+    for (String roles : new String[] {"ADMIN", ""}) {
+      MockServerWebExchange exchange =
+          MockServerWebExchange.from(
+              MockServerHttpRequest.method(HttpMethod.POST, "/api/categories"));
+      ServerWebExchange withUser =
+          exchange.mutate().principal(Mono.just(userWithRoles("CUSTOMER"))).build();
+      withUser.getAttributes().put(GATEWAY_ROUTE_ATTR, route(roles));
+      filter.filter(withUser, e -> Mono.empty()).block();
+      String body = exchange.getResponse().getBodyAsString().block();
+      assertThat(body).isEqualTo("{\"success\":false,\"message\":\"Access denied\",\"data\":null}");
+    }
+  }
 }

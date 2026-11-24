@@ -16,7 +16,6 @@ import jakarta.validation.Valid;
 import java.net.URI;
 import java.util.List;
 import java.util.UUID;
-
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -61,17 +60,18 @@ public class ProductController {
       throws Exception {
 
     Product created = productService.createProduct(product, images);
-    log.info("Response : {}" , created);
+    log.debug("Created product {}", created.getId());
     URI location = URI.create("/api/v1/products/" + created.getId());
-    return ResponseEntity.created(location).body(CustomApiResponse.ok(productMapper.toResponse(created)));
+    return ResponseEntity.created(location)
+        .body(CustomApiResponse.ok(productMapper.toResponse(created)));
   }
 
   @PatchMapping(value = "/{id}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
   public ResponseEntity<CustomApiResponse<ProductResponse>> update(
-          @PathVariable UUID id,
-          @Valid @RequestPart("product") ProductRequest product,
-          @RequestPart(value = "images", required = true) List<MultipartFile> images)
-          throws Exception {
+      @PathVariable UUID id,
+      @Valid @RequestPart("product") ProductRequest product,
+      @RequestPart(value = "images", required = true) List<MultipartFile> images)
+      throws Exception {
 
     Product updateProduct = productService.updateProduct(id, product, images);
     return ResponseEntity.ok(CustomApiResponse.ok(productMapper.toResponse(updateProduct)));
@@ -98,5 +98,4 @@ public class ProductController {
     productService.deleteProduct(id);
     return ResponseEntity.ok(CustomApiResponse.ok("Delete Successfully"));
   }
-
 }

@@ -13,6 +13,13 @@ public class AppException extends RuntimeException {
     this.errorCode = errorCode;
   }
 
+  /** Same, keeping the underlying failure (e.g. a MinIO error) as the cause for the log. */
+  public AppException(HttpStatus status, String errorCode, String message, Throwable cause) {
+    super(message, cause);
+    this.status = status;
+    this.errorCode = errorCode;
+  }
+
   public HttpStatus getStatus() {
     return status;
   }

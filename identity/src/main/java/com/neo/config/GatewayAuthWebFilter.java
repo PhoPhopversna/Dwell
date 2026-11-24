@@ -1,5 +1,6 @@
 package com.neo.config;
 
+import com.neo.logging.CorrelationId;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import lombok.extern.slf4j.Slf4j;
@@ -61,7 +62,7 @@ public class GatewayAuthWebFilter implements WebFilter, Ordered {
     response.setStatusCode(HttpStatus.FORBIDDEN);
     response.getHeaders().setContentType(MediaType.APPLICATION_JSON);
     byte[] body =
-        "{\"success\":false,\"message\":\"Direct access is not allowed; use the API gateway\",\"data\":null}"
+        CorrelationId.errorJson("Access denied", exchange.getAttribute(CorrelationId.MDC_KEY))
             .getBytes(StandardCharsets.UTF_8);
     return response.writeWith(Mono.just(response.bufferFactory().wrap(body)));
   }

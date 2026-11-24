@@ -123,7 +123,9 @@ class ProductImageControllerTest {
   @Test
   void deleteImageNotOnProductReturns404() throws Exception {
     UUID imageId = UUID.randomUUID();
-    doThrow(new EntityNotFoundException("Image not found")).when(service).deleteImage(productId, imageId);
+    doThrow(new EntityNotFoundException("Image not found"))
+        .when(service)
+        .deleteImage(productId, imageId);
 
     mvc.perform(delete(base + "/" + imageId)).andExpect(status().isNotFound());
   }

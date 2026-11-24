@@ -10,6 +10,7 @@ import com.neo.repository.ProductRepository;
 import com.neo.service.KafkaPublisher;
 import com.neo.service.ProductImageService;
 import com.neo.service.ProductService;
+import com.neo.service.validator.ImageFileValidator;
 import com.neo.service.validator.ProductAttributeValidator;
 import jakarta.persistence.EntityNotFoundException;
 import jakarta.transaction.Transactional;
@@ -55,6 +56,7 @@ public class ProductServiceImpl implements ProductService {
   @Override
   @Transactional
   public Product createProduct(ProductRequest req, List<MultipartFile> images) throws Exception {
+    ImageFileValidator.validate(images); // before anything is saved or uploaded
     Category category =
         categoryRepository
             .findById(req.getCategoryId())
@@ -75,6 +77,7 @@ public class ProductServiceImpl implements ProductService {
   @Transactional
   public Product updateProduct(UUID productId, ProductRequest req, List<MultipartFile> images)
       throws Exception {
+    ImageFileValidator.validate(images); // before anything is saved or uploaded
     Category category =
         categoryRepository
             .findById(req.getCategoryId())
@@ -83,7 +86,7 @@ public class ProductServiceImpl implements ProductService {
     Product product =
         productRepository
             .findById(productId)
-            .orElseThrow(() -> new EntityNotFoundException("Product not found:" + productId));
+            .orElseThrow(() -> new EntityNotFoundException("Product not found: " + productId));
     productAttributeValidator.validate(category, req.getAttributes());
     Product productRequest = productMapper.toEntity(req);
     product.setName(productRequest.getName());
@@ -116,7 +119,9 @@ public class ProductServiceImpl implements ProductService {
                       .orElseThrow(
                           () -> new EntityNotFoundException("Product not found: " + productId));
               List<ProductImageDeletedEvent> imageEvents =
-                  product.getImages().stream().map(i -> ProductImageServiceImpl.toDeletedEvent(i, productId)).toList();
+                  product.getImages().stream()
+                      .map(i -> ProductImageServiceImpl.toDeletedEvent(i, productId))
+                      .toList();
               productRepository.delete(product);
               return imageEvents;
             });
@@ -137,5 +142,4 @@ public class ProductServiceImpl implements ProductService {
   public List<Product> getProducts() {
     return productRepository.findAll();
   }
-
 }

@@ -3,6 +3,7 @@ package com.neo.service.impl;
 import com.neo.constant.RouteConstant;
 import com.neo.dto.RouteRequest;
 import com.neo.dto.RouteResponse;
+import com.neo.exception.AppException;
 import com.neo.exception.DataBaseException;
 import com.neo.exception.RouteNotFoundException;
 import com.neo.mapper.RouteMapper;
@@ -12,6 +13,7 @@ import com.neo.service.RouteReloadService;
 import com.neo.service.RouteService;
 import java.time.LocalDateTime;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
@@ -36,19 +38,12 @@ public class RouteServiceImpl implements RouteService {
 
   @Override
   public Mono<RouteResponse> saveRoute(RouteRequest routeRequest) {
-    log.info("Request data : {}", routeRequest);
+    log.debug("Saving route {} {}", routeRequest.getMethod(), routeRequest.getPath());
     return routeRepository
         .save(routeMapper.toRoute(routeRequest))
         .map(routeMapper::toRouteResponse)
         .doOnSuccess(saved -> routeReloadService.reloadRoutes())
-        .onErrorMap(
-            e -> {
-              log.error("Failed to save data: {}" + e.getMessage());
-              return new DataBaseException(
-                  HttpStatus.INTERNAL_SERVER_ERROR,
-                  "00030",
-                  "Failed to save data " + e.getLocalizedMessage());
-            });
+        .onErrorMap(e -> toRouteError("save", null, e));
   }
 
   @Override
@@ -58,7 +53,7 @@ public class RouteServiceImpl implements RouteService {
         .map(routeMapper::toRouteResponse)
         .onErrorMap(
             e -> {
-              log.error("Failed to get route: {}" + e.getMessage());
+              log.error("Failed to load routes", e);
               return new DataBaseException(
                   HttpStatus.INTERNAL_SERVER_ERROR,
                   "00030",
@@ -78,12 +73,13 @@ public class RouteServiceImpl implements RouteService {
                     String.format("Route with id %s is not found", id))))
         .flatMap(
             r -> {
-              System.out.println(r);
+              log.info("Deleting route {} {} {}", r.getId(), r.getMethod(), r.getPath());
               return routeRepository.deleteById(r.getId());
             })
         .doOnSuccess(v -> routeReloadService.reloadRoutes())
-        .doFinally(signal -> log.info("Signal: {}", signal))
-        .doOnError(e -> log.error("Error: ", e));
+        .doOnError(
+            e -> !(e instanceof RouteNotFoundException),
+            e -> log.error("Failed to delete route {}", id, e));
   }
 
   @Override
@@ -98,15 +94,8 @@ public class RouteServiceImpl implements RouteService {
                         "404",
                         String.format("Route with id %s is not found", id))))
         .map(routeMapper::toRouteResponse)
-        .onErrorResume(
-            e -> {
-              log.error("Failed to delete route: {}" + e.getMessage());
-              return Mono.error(
-                  new DataBaseException(
-                      HttpStatus.INTERNAL_SERVER_ERROR,
-                      "00030",
-                      "Failed to get data " + e.getLocalizedMessage()));
-            });
+        // "not found" is the expected 404, not a database failure
+        .onErrorMap(e -> !(e instanceof AppException), e -> toRouteError("load", id, e));
   }
 
   @Override
@@ -134,7 +123,29 @@ public class RouteServiceImpl implements RouteService {
                     "404",
                     String.format("Route with id %s is not found", id))))
         .doOnSuccess(consumer -> routeReloadService.reloadRoutes())
-        .map(routeMapper::toRouteResponse);
+        .map(routeMapper::toRouteResponse)
+        .onErrorMap(e -> !(e instanceof AppException), e -> toRouteError("update", id, e));
+  }
+
+  /**
+   * Missing required columns, values too long, or a duplicate route are the caller's input: 400
+   * with the detail logged at WARN. Anything else is a database failure: 500, logged at ERROR.
+   */
+  private static AppException toRouteError(String action, Long id, Throwable e) {
+    if (e instanceof DataIntegrityViolationException) {
+      log.warn(
+          "Rejected route {} (id {}): {}",
+          action,
+          id,
+          ((DataIntegrityViolationException) e).getMostSpecificCause().getMessage());
+      return new AppException(
+          HttpStatus.BAD_REQUEST,
+          "00031",
+          "Route data is invalid (missing required fields, too long, or a duplicate route)");
+    }
+    log.error("Failed to {} route (id {})", action, id, e);
+    return new DataBaseException(
+        HttpStatus.INTERNAL_SERVER_ERROR, "00030", "Failed to " + action + " route");
   }
 }
 ;

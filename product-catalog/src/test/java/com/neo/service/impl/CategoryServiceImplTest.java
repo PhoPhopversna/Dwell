@@ -10,6 +10,7 @@ import static org.mockito.Mockito.when;
 import com.neo.dto.CategoryRequest;
 import com.neo.dto.CategoryResponse;
 import com.neo.entity.Category;
+import com.neo.exception.AppException;
 import com.neo.mapper.CategoryMapper;
 import com.neo.repository.CategoryRepository;
 import jakarta.persistence.EntityNotFoundException;
@@ -205,7 +206,7 @@ class CategoryServiceImplTest {
       when(categoryRepository.findById(c.getId())).thenReturn(Optional.of(c));
 
       assertThatThrownBy(() -> service.updateCategory(c.getId(), request(null, c.getId())))
-          .isInstanceOf(IllegalArgumentException.class)
+          .isInstanceOf(AppException.class)
           .hasMessage("A category cannot be its own parent");
     }
 
@@ -219,7 +220,7 @@ class CategoryServiceImplTest {
 
       assertThatThrownBy(
               () -> service.updateCategory(root.getId(), request(null, grandchild.getId())))
-          .isInstanceOf(IllegalArgumentException.class)
+          .isInstanceOf(AppException.class)
           .hasMessage("Cannot move a category under one of its own descendants");
       assertThat(root.getParent()).isNull();
     }

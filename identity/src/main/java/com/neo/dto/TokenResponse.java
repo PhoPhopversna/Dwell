@@ -2,13 +2,16 @@ package com.neo.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;
+import lombok.ToString;
 
 @Data
 public class TokenResponse {
   @JsonProperty("access_token")
+  @ToString.Exclude
   private String accessToken;
 
   @JsonProperty("refresh_token")
+  @ToString.Exclude
   private String refreshToken;
 
   @JsonProperty("expires_in")

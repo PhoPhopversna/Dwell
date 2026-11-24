@@ -105,7 +105,8 @@ class AttributeDefinitionServiceImplTest {
     when(categoryRepository.findById(category.getId())).thenReturn(Optional.of(category));
 
     assertThatThrownBy(
-            () -> service.create(category.getId(), request("size", DataType.MULTISELECT, List.of())))
+            () ->
+                service.create(category.getId(), request("size", DataType.MULTISELECT, List.of())))
         .isInstanceOf(AppException.class)
         .satisfies(e -> assertThat(statusOf(e)).isEqualTo(HttpStatus.BAD_REQUEST));
     verify(attributeDefinitionRepository, never()).save(any());

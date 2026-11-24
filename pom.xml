@@ -18,6 +18,7 @@
 	<description>Dwell parent project</description>
 
 	<modules>
+		<module>common-logging</module>
 		<module>api-gateway</module>
         <module>identity</module>
 		<module>product-catalog</module>

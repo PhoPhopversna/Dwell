@@ -1,5 +1,7 @@
 package com.neo.dto;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.neo.logging.CorrelationId;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
@@ -13,6 +15,10 @@ public class GenericResponse<T> {
   private String errorCode;
   private String message;
   private T data;
+
+  /** Same id as the X-Correlation-ID header; quote it when reporting a problem. */
+  @JsonInclude(JsonInclude.Include.NON_NULL)
+  private String correlationId = CorrelationId.current();
 
   public GenericResponse(boolean success, String errorCode, String message, T data) {
     this.success = success;

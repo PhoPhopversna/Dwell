@@ -2,7 +2,6 @@ package com.neo.security;
 
 import static org.springframework.cloud.gateway.support.ServerWebExchangeUtils.GATEWAY_ROUTE_ATTR;
 
-import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -11,11 +10,7 @@ import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
 import org.springframework.cloud.gateway.route.Route;
 import org.springframework.core.Ordered;
-import org.springframework.core.io.buffer.DataBuffer;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
-import org.springframework.http.server.reactive.ServerHttpResponse;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
@@ -77,7 +72,7 @@ public class RouteAuthorizationFilter implements GlobalFilter, Ordered {
           method,
           path,
           route == null ? "?" : route.getId());
-      return reject(exchange, HttpStatus.FORBIDDEN, "Access to this route is not configured");
+      return reject(exchange, HttpStatus.FORBIDDEN, SecurityResponses.ACCESS_DENIED);
     }
 
     return exchange
@@ -91,7 +86,8 @@ public class RouteAuthorizationFilter implements GlobalFilter, Ordered {
         .flatMap(
             auth -> {
               if (auth.isEmpty()) {
-                return reject(exchange, HttpStatus.UNAUTHORIZED, "Authentication required");
+                return reject(
+                    exchange, HttpStatus.UNAUTHORIZED, SecurityResponses.AUTHENTICATION_REQUIRED);
               }
               Set<String> userRoles =
                   auth.get().getAuthorities().stream()
@@ -109,24 +105,12 @@ public class RouteAuthorizationFilter implements GlobalFilter, Ordered {
                   auth.get().getName(),
                   required,
                   userRoles);
-              return reject(
-                  exchange,
-                  HttpStatus.FORBIDDEN,
-                  "Insufficient role: requires one of "
-                      + required
-                      + " (log in again after a role is assigned)");
+              return reject(exchange, HttpStatus.FORBIDDEN, SecurityResponses.ACCESS_DENIED);
             });
   }
 
   private Mono<Void> reject(ServerWebExchange exchange, HttpStatus status, String message) {
-    ServerHttpResponse response = exchange.getResponse();
-    response.setStatusCode(status);
-    response.getHeaders().setContentType(MediaType.APPLICATION_JSON);
-    if (status == HttpStatus.UNAUTHORIZED) {
-      response.getHeaders().set(HttpHeaders.WWW_AUTHENTICATE, "Bearer");
-    }
-    String body = "{\"success\":false,\"message\":\"" + message + "\",\"data\":null}";
-    DataBuffer buffer = response.bufferFactory().wrap(body.getBytes(StandardCharsets.UTF_8));
-    return response.writeWith(Mono.just(buffer));
+    return SecurityResponses.write(
+        exchange, status, message, status == HttpStatus.UNAUTHORIZED ? "Bearer" : null);
   }
 }
