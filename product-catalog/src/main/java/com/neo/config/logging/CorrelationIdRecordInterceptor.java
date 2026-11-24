@@ -8,6 +8,7 @@ import org.apache.kafka.common.header.Header;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
+import org.springframework.kafka.listener.KafkaBackoffException;
 import org.springframework.kafka.listener.RecordInterceptor;
 import org.springframework.stereotype.Component;
 
@@ -44,6 +45,11 @@ public class CorrelationIdRecordInterceptor implements RecordInterceptor<Object,
       ConsumerRecord<Object, Object> record,
       Exception exception,
       Consumer<Object, Object> consumer) {
+    if (isBackoff(exception)) {
+      // Not an attempt: a retry-topic record that arrived before its delay is up
+      LOG.debug("Kafka message on {} waits for its retry delay", record.topic());
+      return;
+    }
     // Stack trace is logged by the container's error handler
     LOG.atWarn()
         .addKeyValue("event", "kafka_message_failed")
@@ -51,7 +57,7 @@ public class CorrelationIdRecordInterceptor implements RecordInterceptor<Object,
         .addKeyValue("partition", record.partition())
         .addKeyValue("offset", record.offset())
         .addKeyValue("durationMs", elapsedMs())
-        .log("Kafka message processing failed: {}", exception.getMessage());
+        .log("Kafka message processing failed: {}", rootCause(exception).getMessage());
   }
 
   @Override
@@ -59,6 +65,23 @@ public class CorrelationIdRecordInterceptor implements RecordInterceptor<Object,
       ConsumerRecord<Object, Object> record, Consumer<Object, Object> consumer) {
     MDC.remove(CorrelationId.MDC_KEY);
     START.remove();
+  }
+
+  private static boolean isBackoff(Throwable e) {
+    for (Throwable t = e; t != null; t = t.getCause() == t ? null : t.getCause()) {
+      if (t instanceof KafkaBackoffException) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private static Throwable rootCause(Throwable e) {
+    Throwable root = e;
+    while (root.getCause() != null && root.getCause() != root) {
+      root = root.getCause();
+    }
+    return root;
   }
 
   private static long elapsedMs() {

@@ -13,14 +13,23 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import javax.imageio.ImageIO;
 import lombok.extern.slf4j.Slf4j;
 import net.coobird.thumbnailator.Thumbnails;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.common.header.Header;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.kafka.annotation.DltHandler;
 import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.kafka.annotation.RetryableTopic;
+import org.springframework.kafka.retrytopic.DltStrategy;
+import org.springframework.kafka.retrytopic.TopicSuffixingStrategy;
 import org.springframework.kafka.support.Acknowledgment;
+import org.springframework.kafka.support.KafkaHeaders;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.retry.annotation.Backoff;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -47,12 +56,32 @@ public class ImageProcessingConsumer {
     this.messagingTemplate = messagingTemplate;
   }
 
+  @RetryableTopic(
+      attempts = "${app.kafka.retry.attempts:4}",
+      backoff =
+          @Backoff(
+              delayExpression = "${app.kafka.retry.delay-ms:60000}",
+              multiplierExpression = "${app.kafka.retry.multiplier:5}",
+              maxDelayExpression = "${app.kafka.retry.max-delay-ms:1800000}"),
+      retryTopicSuffix = "-retry",
+      dltTopicSuffix = ".DLT",
+      topicSuffixingStrategy = TopicSuffixingStrategy.SUFFIX_WITH_INDEX_VALUE,
+      dltStrategy = DltStrategy.FAIL_ON_ERROR,
+      numPartitions = "${app.kafka.partitions:3}",
+      replicationFactor = "${app.kafka.replicas:1}")
   @KafkaListener(topics = "${app.kafka.image-uploaded.topic}", groupId = "image-processing-group")
   @Transactional
   public void handle(ProductImageUploadedEvent event, Acknowledgment ack) {
 
-    if (!productImageRepository.existsById(event.productImageId())) {
+    ProductImage image = productImageRepository.findById(event.productImageId()).orElse(null);
+    if (image == null) {
       log.info("Image {} already deleted, skipping thumbnail", event.productImageId());
+      ack.acknowledge();
+      return;
+    }
+    if (image.getStatus() == ProductImage.ImageStatus.READY) {
+      // Kafka delivers at least once: a duplicate must not redo the work
+      log.info("Image {} already processed, skipping duplicate", event.productImageId());
       ack.acknowledge();
       return;
     }
@@ -122,6 +151,23 @@ public class ImageProcessingConsumer {
     }
   }
 
+  /** Retries are exhausted (or the message is unreadable): logged once, never republished. */
+  @DltHandler
+  public void onDeadLetter(ConsumerRecord<String, Object> record, Acknowledgment ack) {
+    Header reason = record.headers().lastHeader(KafkaHeaders.DLT_EXCEPTION_MESSAGE);
+    log.error(
+        "Kafka message failed permanently: topic={} partition={} offset={} key={} reason={}",
+        record.topic(),
+        record.partition(),
+        record.offset(),
+        record.key(),
+        reason == null ? null : new String(reason.value(), StandardCharsets.UTF_8));
+    if (record.value() instanceof ProductImageUploadedEvent event) {
+      markFailed(event);
+    }
+    ack.acknowledge();
+  }
+
   public void markFailed(ProductImageUploadedEvent event) {
     if (productImageRepository.updateStatus(event.productImageId(), ProductImage.ImageStatus.FAILED)
         > 0) {
@@ -131,6 +177,19 @@ public class ImageProcessingConsumer {
     }
   }
 
+  @RetryableTopic(
+      attempts = "${app.kafka.retry.attempts:4}",
+      backoff =
+          @Backoff(
+              delayExpression = "${app.kafka.retry.delay-ms:60000}",
+              multiplierExpression = "${app.kafka.retry.multiplier:5}",
+              maxDelayExpression = "${app.kafka.retry.max-delay-ms:1800000}"),
+      retryTopicSuffix = "-retry",
+      dltTopicSuffix = ".DLT",
+      topicSuffixingStrategy = TopicSuffixingStrategy.SUFFIX_WITH_INDEX_VALUE,
+      dltStrategy = DltStrategy.FAIL_ON_ERROR,
+      numPartitions = "${app.kafka.partitions:3}",
+      replicationFactor = "${app.kafka.replicas:1}")
   @KafkaListener(topics = "${app.kafka.image-deleted.topic}", groupId = "product-image-cleanup")
   public void handle(ProductImageDeletedEvent event, Acknowledgment ack) {
     try {

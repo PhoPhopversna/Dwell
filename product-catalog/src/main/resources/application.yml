@@ -44,6 +44,12 @@ app:
   kafka:
     partitions: 3
     replicas: 1
+    # Retry topics: attempt 1 + retries after 1m, 5m, 25m (capped at 30m), then <topic>.DLT
+    retry:
+      attempts: ${KAFKA_RETRY_ATTEMPTS:4}
+      delay-ms: ${KAFKA_RETRY_DELAY_MS:60000}
+      multiplier: ${KAFKA_RETRY_MULTIPLIER:5}
+      max-delay-ms: ${KAFKA_RETRY_MAX_DELAY_MS:1800000}
 
     image-uploaded:
       topic: product-image-uploaded
