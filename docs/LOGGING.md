@@ -144,12 +144,24 @@ Every error reaches the client in the service's normal wrapper (`success:false`,
 | MinIO unavailable during upload | 503 | `ProductImageServiceImpl` |
 | Anything unexpected | 500 | catch-all in each handler |
 
-**Kafka** (product-catalog, `KafkaErrorHandlingConfig`):
-- A failing listener is retried 3 times (after 1s, 2s and 4s).
-- After that the message is logged at ERROR and published to `<topic>.DLT`, with the exception in the headers.
-- A message that can't be deserialized goes straight to the DLT with its original bytes (`ErrorHandlingDeserializer`), so it never blocks the partition.
-- A dead-lettered image upload, or one that isn't a readable image, marks the image `FAILED` and notifies the frontend.
-- Publish failures are logged at ERROR with topic, key and correlation ID. They don't fail the request, because the data is already committed.
+**Kafka** (product-catalog, `KafkaRetryConfig` + `@RetryableTopic` on each listener):
+
+- **Retry topics, not in-place retries.** A failing message moves to the next topic and waits there, so the partition keeps flowing:
+
+  ```
+  product-image-uploaded → -retry-0 (1 min) → -retry-1 (5 min) → -retry-2 (25 min) → product-image-uploaded.DLT
+  ```
+
+  That is 4 attempts in total over about 30 minutes, long enough for a MinIO or database restart to heal.
+- **Settings:** `KAFKA_RETRY_ATTEMPTS`, `KAFKA_RETRY_DELAY_MS`, `KAFKA_RETRY_MULTIPLIER` and `KAFKA_RETRY_MAX_DELAY_MS` (defaults 4, 60000, 5, 1800000).
+- **DLT:** after the last attempt, `@DltHandler` logs the message once at ERROR, marks an uploaded image `FAILED` and notifies the frontend. It never republishes (`DltStrategy.FAIL_ON_ERROR`).
+- **Unreadable messages** (`ErrorHandlingDeserializer`) skip the retries and go straight to the DLT with their original bytes.
+- **No double processing:**
+  - Each attempt is a single try: there are no in-place retries on top of the retry topics.
+  - The forwarded record's offset is committed (`commitRecovered`), so a restart never forwards it again.
+  - The listeners are idempotent: an upload event for an image that is already `READY` is skipped, and deleting files that are already gone is a no-op. A duplicate delivery therefore does nothing.
+- **Log lines:** one `kafka_message_failed` per real attempt, with the root cause. A record that is only waiting for its retry delay is not logged as a failure.
+- **Publish failures** are logged at ERROR with topic, key and correlation ID. They don't fail the request, because the data is already committed.
 
 ## Correlation ID propagation
 
