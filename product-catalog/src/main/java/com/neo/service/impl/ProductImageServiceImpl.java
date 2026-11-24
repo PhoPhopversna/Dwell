@@ -5,22 +5,28 @@ import com.neo.entity.Product;
 import com.neo.entity.ProductImage;
 import com.neo.event.ProductImageDeletedEvent;
 import com.neo.event.ProductImageUploadedEvent;
+import com.neo.exception.AppException;
 import com.neo.mapper.ProductMapper;
 import com.neo.repository.ProductImageRepository;
 import com.neo.repository.ProductRepository;
 import com.neo.service.KafkaPublisher;
 import com.neo.service.ProductImageService;
+import com.neo.service.validator.ImageFileValidator;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
 import io.minio.StatObjectArgs;
+import io.minio.errors.MinioException;
 import jakarta.persistence.EntityNotFoundException;
 import jakarta.transaction.Transactional;
+import java.io.IOException;
 import java.io.InputStream;
+import java.security.GeneralSecurityException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -63,17 +69,26 @@ public class ProductImageServiceImpl implements ProductImageService {
   @Transactional
   public ProductImageResponse addImageToProduct(UUID productId, MultipartFile file)
       throws Exception {
+    ImageFileValidator.validate(file);
     Product product = findProduct(productId);
 
-    String objectName = UUID.randomUUID() + "-" + file.getOriginalFilename();
+    String objectName =
+        UUID.randomUUID() + "-" + ImageFileValidator.safeFileName(file.getOriginalFilename());
     try (InputStream is = file.getInputStream()) {
       minioClient.putObject(
           PutObjectArgs.builder().bucket(bucket).object(objectName).stream(is, file.getSize(), -1)
               .contentType(file.getContentType())
               .build());
+      // Throws if the object is not there, which aborts the transaction before the row is saved.
+      minioClient.statObject(StatObjectArgs.builder().bucket(bucket).object(objectName).build());
+    } catch (MinioException | GeneralSecurityException | IOException e) {
+      // MinIO down, bucket missing, bad credentials, upload cut off: 503, full detail in the log.
+      throw new AppException(
+          HttpStatus.SERVICE_UNAVAILABLE,
+          "IMAGE_STORAGE_UNAVAILABLE",
+          "Failed to store image %s in bucket %s: %s".formatted(objectName, bucket, e.getMessage()),
+          e);
     }
-    // Throws if the object is not there, which aborts the transaction before the row is saved.
-    minioClient.statObject(StatObjectArgs.builder().bucket(bucket).object(objectName).build());
     log.info("Uploaded {} to bucket {}", objectName, bucket);
 
     ProductImage image =

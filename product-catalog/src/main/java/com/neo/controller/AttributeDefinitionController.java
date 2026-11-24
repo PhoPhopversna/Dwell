@@ -29,8 +29,7 @@ public class AttributeDefinitionController {
   public ResponseEntity<CustomApiResponse<AttributeDefinitionResponse>> create(
       @PathVariable UUID categoryId, @Valid @RequestBody AttributeDefinitionRequest request) {
     AttributeDefinitionResponse created = attributeDefinitionService.create(categoryId, request);
-    URI location =
-        URI.create("/api/categories/" + categoryId + "/attributes/" + created.getId());
+    URI location = URI.create("/api/categories/" + categoryId + "/attributes/" + created.getId());
     return ResponseEntity.created(location).body(CustomApiResponse.ok(created));
   }
 

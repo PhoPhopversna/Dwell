@@ -35,6 +35,8 @@ keycloak:
   token-ttl: 55 # access token TTL (Keycloak default 60s)
   refresh-token-ttl: 1740 # refresh token TTL (Keycloak default 1800s/30min)
 app:
+  # Loki "environment" label + JSON field. e.g. local, dev, staging, prod
+  environment: ${APP_ENV:local}
   # Only accept requests forwarded by the API gateway (it adds this header + secret).
   gateway-auth:
     enabled: ${GATEWAY_AUTH_ENABLED:true}
@@ -60,17 +62,6 @@ management:
       exposure:
         include: refresh,health,info,gateway,env
 
-# Optional: logging for debugging
-logging:
-  level:
-    root: INFO
-    org.springframework.web: DEBUG
-    org.springframework.web.reactive.function.client.ExchangeFunctions: WARN
-    org.springframework.web.HttpLogging: WARN
-    org.springframework.web.server.adapter.HttpWebHandlerAdapter: INFO
-    org.springframework.web.reactive.result.method: INFO
-  pattern:
-    console: "%d{yyyy-MM-dd HH:mm:ss} [%X{correlationId}] %-5level %logger - %msg%n"
 
 webclient:
   timeout:
@@ -78,3 +69,24 @@ webclient:
     response: 7000     # 7 seconds
     read: 7000
     write: 7000
+
+logging:
+  # One JSON object per line (see common-logging DwellJsonLogFormatter), on console and in
+  # ${LOG_DIR}/<service>.log, which Grafana Alloy tails and ships to Loki.
+  structured:
+    format:
+      console: ${LOG_CONSOLE_FORMAT:com.neo.logging.DwellJsonLogFormatter}
+      file: com.neo.logging.DwellJsonLogFormatter
+  file:
+    name: ${LOG_DIR:logs}/${spring.application.name}.log
+  logback:
+    rollingpolicy:
+      max-file-size: ${LOG_MAX_FILE_SIZE:50MB}
+      max-history: ${LOG_MAX_HISTORY:7}
+      total-size-cap: ${LOG_TOTAL_SIZE_CAP:1GB}
+  level:
+    root: ${LOG_LEVEL_ROOT:INFO}
+    com.neo: ${LOG_LEVEL_APP:INFO}
+    # request/response lines (com.neo.logging.AccessLogger); DEBUG also logs "Request received"
+    com.neo.logging.access: ${LOG_LEVEL_ACCESS:INFO}
+    org.springframework.boot.autoconfigure.web.reactive.error.AbstractErrorWebExceptionHandler: OFF

@@ -1,6 +1,8 @@
 package com.neo.config;
 
+import com.neo.logging.CorrelationId;
 import com.neo.service.RateLimitService;
+import java.nio.charset.StandardCharsets;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
@@ -8,6 +10,7 @@ import org.springframework.cloud.gateway.filter.GlobalFilter;
 import org.springframework.cloud.gateway.filter.ratelimit.KeyResolver;
 import org.springframework.core.Ordered;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
@@ -32,8 +35,14 @@ public class RateLimitFilter implements GlobalFilter, Ordered {
             allowed -> {
               if (!allowed) {
                 log.warn("Rate limit exceeded — path: {}, method: {}", path, method);
-                exchange.getResponse().setStatusCode(HttpStatus.TOO_MANY_REQUESTS);
-                return exchange.getResponse().setComplete();
+                var response = exchange.getResponse();
+                response.setStatusCode(HttpStatus.TOO_MANY_REQUESTS);
+                response.getHeaders().setContentType(MediaType.APPLICATION_JSON);
+                byte[] body =
+                    CorrelationId.errorJson(
+                            "Too many requests", exchange.getAttribute(CorrelationId.MDC_KEY))
+                        .getBytes(StandardCharsets.UTF_8);
+                return response.writeWith(Mono.just(response.bufferFactory().wrap(body)));
               }
               return chain.filter(exchange);
             });

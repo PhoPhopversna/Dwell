@@ -204,6 +204,7 @@ public class KeycloakGenericConnector {
             HttpStatusCode::is4xxClientError,
             resp ->
                 resp.bodyToMono(String.class)
+                    .defaultIfEmpty("")
                     .flatMap(
                         body -> {
                           log.warn("4xx error from Keycloak [{}]: {}", url, body);
@@ -214,6 +215,7 @@ public class KeycloakGenericConnector {
             HttpStatusCode::is5xxServerError,
             resp ->
                 resp.bodyToMono(String.class)
+                    .defaultIfEmpty("")
                     .flatMap(
                         body -> {
                           log.error("5xx error from Keycloak [{}]: {}", url, body);

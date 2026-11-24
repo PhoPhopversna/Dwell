@@ -101,7 +101,8 @@ class ProductImageServiceImplTest {
 
     ProductImageResponse result =
         service.addImageToProduct(
-            product.getId(), new MockMultipartFile("images", "photo.png", "image/png", new byte[4]));
+            product.getId(),
+            new MockMultipartFile("images", "photo.png", "image/png", new byte[4]));
 
     assertThat(result).isSameAs(mapped);
     ArgumentCaptor<PutObjectArgs> put = ArgumentCaptor.forClass(PutObjectArgs.class);
@@ -131,8 +132,12 @@ class ProductImageServiceImplTest {
     assertThatThrownBy(
             () ->
                 service.addImageToProduct(
-                    product.getId(), new MockMultipartFile("images", "a.png", "image/png", new byte[1])))
-        .isInstanceOf(IOException.class);
+                    product.getId(),
+                    new MockMultipartFile("images", "a.png", "image/png", new byte[1])))
+        .isInstanceOf(com.neo.exception.AppException.class)
+        .hasCauseInstanceOf(IOException.class)
+        .extracting(e -> ((com.neo.exception.AppException) e).getStatus())
+        .isEqualTo(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE);
     verify(productImageRepository, never()).save(any());
     verifyNoInteractions(kafkaPublisher);
     assertThat(product.getImages()).isEmpty();
@@ -144,7 +149,9 @@ class ProductImageServiceImplTest {
     when(productRepository.findById(id)).thenReturn(Optional.empty());
 
     assertThatThrownBy(
-            () -> service.addImageToProduct(id, new MockMultipartFile("images", new byte[1])))
+            () ->
+                service.addImageToProduct(
+                    id, new MockMultipartFile("images", "a.png", "image/png", new byte[1])))
         .isInstanceOf(EntityNotFoundException.class);
     verifyNoInteractions(minioClient);
   }
@@ -233,5 +240,29 @@ class ProductImageServiceImplTest {
         .isInstanceOf(EntityNotFoundException.class);
     verify(productImageRepository, never()).delete(any());
     verifyNoInteractions(kafkaPublisher);
+  }
+
+  @Test
+  void nonImageOrEmptyFileIsRejectedBeforeAnythingIsStored() {
+    for (MockMultipartFile bad :
+        List.of(
+            new MockMultipartFile("images", "notes.txt", "text/plain", new byte[] {1}),
+            new MockMultipartFile("images", "a.png", "image/png", new byte[0]),
+            new MockMultipartFile("images", "x", null, new byte[] {1}))) {
+      assertThatThrownBy(() -> service.addImageToProduct(UUID.randomUUID(), bad))
+          .isInstanceOf(com.neo.exception.AppException.class)
+          .extracting(e -> ((com.neo.exception.AppException) e).getStatus())
+          .isEqualTo(org.springframework.http.HttpStatus.BAD_REQUEST);
+    }
+    verifyNoInteractions(minioClient, productRepository);
+  }
+
+  @Test
+  void uploadedFileNameIsMadeSafeForTheObjectNameAndUrl() {
+    assertThat(com.neo.service.validator.ImageFileValidator.safeFileName("../my photo (1).png"))
+        .isEqualTo("my_photo__1_.png");
+    assertThat(com.neo.service.validator.ImageFileValidator.safeFileName("C:\\x\\a.jpg"))
+        .isEqualTo("a.jpg");
+    assertThat(com.neo.service.validator.ImageFileValidator.safeFileName(null)).isEqualTo("image");
   }
 }

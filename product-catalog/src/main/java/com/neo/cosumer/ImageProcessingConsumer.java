@@ -67,6 +67,16 @@ public class ImageProcessingConsumer {
               GetObjectArgs.builder().bucket(bucket).object(event.objectName()).build())) {
 
         BufferedImage img = ImageIO.read(original);
+        if (img == null) {
+          // Not a readable image (corrupt, or a format ImageIO can't decode): retrying won't help.
+          log.warn(
+              "Image {} ({}) is not a readable image; marking it FAILED",
+              event.productImageId(),
+              event.objectName());
+          markFailed(event);
+          ack.acknowledge();
+          return;
+        }
         ByteArrayOutputStream thumbBytes = new ByteArrayOutputStream();
         Thumbnails.of(img).size(300, 300).outputFormat("jpg").toOutputStream(thumbBytes);
         bytes = thumbBytes.toByteArray();
@@ -109,13 +119,22 @@ public class ImageProcessingConsumer {
       throw new RuntimeException("Failed processing image " + event.productImageId(), e);
 
     } catch (Exception e) {
+      // not acked: retried with backoff, then sent to the DLT (see KafkaErrorHandlingConfig)
       throw new RuntimeException("Failed processing image " + event.productImageId(), e);
     }
   }
 
-  @KafkaListener(
-      topics = "${app.kafka.image-deleted.topic}",
-      groupId = "product-image-cleanup")
+  /** Marks the image FAILED and tells the frontend, so it doesn't wait for a thumbnail forever. */
+  public void markFailed(ProductImageUploadedEvent event) {
+    if (productImageRepository.updateStatus(event.productImageId(), ProductImage.ImageStatus.FAILED)
+        > 0) {
+      messagingTemplate.convertAndSend(
+          "/topic/products/" + event.productId(),
+          Map.of("imageId", event.productImageId(), "status", "FAILED"));
+    }
+  }
+
+  @KafkaListener(topics = "${app.kafka.image-deleted.topic}", groupId = "product-image-cleanup")
   public void handle(ProductImageDeletedEvent event, Acknowledgment ack) {
     try {
       removeQuietly(event.objectName());
@@ -130,7 +149,7 @@ public class ImageProcessingConsumer {
       log.info("Cleaned up MinIO files for image {}", event.productImageId());
 
     } catch (Exception e) {
-      // don't ack; rethrow so DefaultErrorHandler applies retry -> DLT
+      // don't ack; rethrow so the error handler retries, then sends it to the DLT
       throw new RuntimeException("Failed cleaning up image " + event.productImageId(), e);
     }
   }

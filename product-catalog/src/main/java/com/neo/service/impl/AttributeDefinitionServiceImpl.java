@@ -115,7 +115,10 @@ public class AttributeDefinitionServiceImpl implements AttributeDefinitionServic
       throw new AppException(
           HttpStatus.BAD_REQUEST,
           "ATTRIBUTE_OPTIONS_REQUIRED",
-          request.getDataType() + " attribute '" + request.getKey() + "' needs at least one option");
+          request.getDataType()
+              + " attribute '"
+              + request.getKey()
+              + "' needs at least one option");
     }
   }
 

@@ -19,6 +19,6 @@ public class CategoryResolver {
         ? null
         : categoryRepository
             .findById(id)
-            .orElseThrow(() -> new EntityNotFoundException("Not Found category id :" + id));
+            .orElseThrow(() -> new EntityNotFoundException("Category not found: " + id));
   }
 }

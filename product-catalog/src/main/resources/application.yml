@@ -21,14 +21,19 @@ spring:
       acks: all
       properties:
         enable.idempotence: true
+        # adds X-Correlation-ID (from MDC) to every produced record
+        interceptor.classes: com.neo.config.logging.CorrelationIdProducerInterceptor
         spring.json.add.type.headers: true
     consumer:
       group-id: default-group
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      # A message that isn't valid JSON for its type goes to the DLT instead of blocking the
+      # partition (the listener would otherwise fail on it forever). See KafkaErrorHandlingConfig.
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
       auto-offset-reset: earliest
       enable-auto-commit: false
       properties:
+        spring.deserializer.value.delegate.class: org.springframework.kafka.support.serializer.JsonDeserializer
         spring.json.trusted.packages: "com.neo.event"
         spring.json.use.type.headers: true
     listener:
@@ -36,6 +41,8 @@ spring:
       concurrency: 3
 
 app:
+  # Loki "environment" label + JSON field. e.g. local, dev, staging, prod
+  environment: ${APP_ENV:local}
   kafka:
     partitions: 3
     replicas: 1
@@ -72,3 +79,26 @@ springdoc:
   api-docs:
     path: /v3/api-docs
   packages-to-scan: com.neo.controller
+
+logging:
+  # One JSON object per line (see common-logging DwellJsonLogFormatter), on console and in
+  # ${LOG_DIR}/<service>.log, which Grafana Alloy tails and ships to Loki.
+  structured:
+    format:
+      console: ${LOG_CONSOLE_FORMAT:com.neo.logging.DwellJsonLogFormatter}
+      file: com.neo.logging.DwellJsonLogFormatter
+  file:
+    name: ${LOG_DIR:logs}/${spring.application.name}.log
+  logback:
+    rollingpolicy:
+      max-file-size: ${LOG_MAX_FILE_SIZE:50MB}
+      max-history: ${LOG_MAX_HISTORY:7}
+      total-size-cap: ${LOG_TOTAL_SIZE_CAP:1GB}
+  level:
+    root: ${LOG_LEVEL_ROOT:INFO}
+    com.neo: ${LOG_LEVEL_APP:INFO}
+    # request/response lines (com.neo.logging.AccessLogger); DEBUG also logs "Request received"
+    com.neo.logging.access: ${LOG_LEVEL_ACCESS:INFO}
+    org.apache.kafka: WARN
+    # Unhandled exceptions are already logged once (stack trace + correlationId) by the access filter.
+    org.apache.catalina.core.ContainerBase.[Tomcat].[localhost].[/].[dispatcherServlet]: OFF

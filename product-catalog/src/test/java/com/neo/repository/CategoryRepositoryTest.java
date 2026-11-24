@@ -72,7 +72,8 @@ class CategoryRepositoryTest extends AbstractRepositoryTest {
     Category category = new Category("Shirts", null);
     category
         .getAttributeDefinitions()
-        .add(new AttributeDefinition(category, "color", "Color", AttributeDefinition.DataType.TEXT));
+        .add(
+            new AttributeDefinition(category, "color", "Color", AttributeDefinition.DataType.TEXT));
     UUID id = categoryRepository.save(category).getId();
     em.flush();
 

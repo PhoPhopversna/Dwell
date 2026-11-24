@@ -10,13 +10,13 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.neo.dto.CategoryRequest;
 import com.neo.dto.CategoryResponse;
+import com.neo.exception.AppException;
 import com.neo.service.CategoryService;
 import jakarta.persistence.EntityNotFoundException;
 import java.util.List;
@@ -24,8 +24,9 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -54,9 +55,9 @@ class CategoryControllerTest {
 
     mvc.perform(get(BASE + "/" + res.getId()))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.id").value(res.getId().toString()))
-        .andExpect(jsonPath("$.name").value("Laptops"))
-        .andExpect(jsonPath("$.parent_id").value(parent.toString()));
+        .andExpect(jsonPath("$.data.id").value(res.getId().toString()))
+        .andExpect(jsonPath("$.data.name").value("Laptops"))
+        .andExpect(jsonPath("$.data.parent_id").value(parent.toString()));
   }
 
   @Test
@@ -71,9 +72,9 @@ class CategoryControllerTest {
 
     mvc.perform(get(BASE))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.length()").value(2))
-        .andExpect(jsonPath("$[0].name").value("A"))
-        .andExpect(jsonPath("$[1].name").value("B"));
+        .andExpect(jsonPath("$.data.length()").value(2))
+        .andExpect(jsonPath("$.data[0].name").value("A"))
+        .andExpect(jsonPath("$.data[1].name").value("B"));
   }
 
   @Test
@@ -91,7 +92,7 @@ class CategoryControllerTest {
     mvc.perform(post(BASE).contentType(MediaType.APPLICATION_JSON).content(body))
         .andExpect(status().isCreated())
         .andExpect(header().string("Location", BASE + "/" + created.getId()))
-        .andExpect(jsonPath("$.id").value(created.getId().toString()));
+        .andExpect(jsonPath("$.data.id").value(created.getId().toString()));
 
     ArgumentCaptor<CategoryRequest> captor = ArgumentCaptor.forClass(CategoryRequest.class);
     verify(categoryService).saveCategory(captor.capture());
@@ -101,7 +102,6 @@ class CategoryControllerTest {
         .singleElement()
         .satisfies(a -> assertThat(a.getKey()).isEqualTo("color"));
   }
-
 
   @Test
   void patchReturnsUpdatedCategory() throws Exception {
@@ -114,7 +114,7 @@ class CategoryControllerTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"name\":\"Renamed\"}"))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.name").value("Renamed"));
+        .andExpect(jsonPath("$.data.name").value("Renamed"));
   }
 
   @Test
@@ -123,7 +123,7 @@ class CategoryControllerTest {
 
     mvc.perform(delete(BASE + "/" + id))
         .andExpect(status().isOk())
-        .andExpect(content().string("Delete Successfully"));
+        .andExpect(jsonPath("$.data").value("Delete Successfully"));
 
     verify(categoryService).deleteCategory(id);
   }
@@ -143,7 +143,11 @@ class CategoryControllerTest {
   void patchReturns400ForInvalidHierarchyMove() throws Exception {
     UUID id = UUID.randomUUID();
     when(categoryService.updateCategory(eq(id), any(CategoryRequest.class)))
-        .thenThrow(new IllegalArgumentException("A category cannot be its own parent"));
+        .thenThrow(
+            new AppException(
+                HttpStatus.BAD_REQUEST,
+                "CATEGORY_OWN_PARENT",
+                "A category cannot be its own parent"));
 
     mvc.perform(
             patch(BASE + "/" + id)

@@ -36,3 +36,17 @@ build/
 
 ### Local API test collection (not versioned) ###
 postman/
+
+### Service log files (shipped to Loki by Alloy) ###
+logs/
+**/logs/
+
+### Service docker files  ###
+docker/
+
+### Local env files ###
+.env
+
+### scripts/dwell.sh pid files ###
+.run/
+scripts/
