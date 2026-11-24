@@ -33,4 +33,7 @@ public class AppUser {
 
   @Column("created_by")
   private String createdBy;
+
+  @Column("last_login_at")
+  private LocalDateTime lastLoginAt;
 }
