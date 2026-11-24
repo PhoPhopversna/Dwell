@@ -6,28 +6,10 @@ import java.util.concurrent.Executor;
 import java.util.function.Supplier;
 import org.slf4j.MDC;
 
-/**
- * Carries the current correlation id to work that runs on another thread.
- *
- * <p>Spring-managed pools ({@code @Async}, the auto-configured {@code applicationTaskExecutor},
- * {@code @Scheduled}) are already covered by {@link CorrelationTaskDecorator}. Use this class for
- * everything else, for example {@code CompletableFuture} on the common pool or your own executor:
- *
- * <pre>{@code
- * CompletableFuture.supplyAsync(CorrelationContext.wrapSupplier(() -> load(id)));
- * CompletableFuture.runAsync(task, CorrelationContext.wrapExecutor(myExecutor));
- * executor.submit(CorrelationContext.wrapCallable(() -> compute()));
- * new Thread(CorrelationContext.wrap(() -> work())).start();
- * }</pre>
- *
- * <p>The worker thread gets the caller's id (or a new one if the caller had none) while the task
- * runs, and its previous MDC value is restored afterwards, so pooled threads never leak an id.
- */
 public final class CorrelationContext {
 
   private CorrelationContext() {}
 
-  /** The current thread's correlation id, or {@code null}. */
   public static String current() {
     return MDC.get(CorrelationId.MDC_KEY);
   }
@@ -55,12 +37,10 @@ public final class CorrelationContext {
     };
   }
 
-  /** An executor whose tasks all carry the submitting thread's correlation id. */
   public static Executor wrapExecutor(Executor executor) {
     return task -> executor.execute(wrap(task));
   }
 
-  /** Runs {@code task} with {@code id} in the MDC, then restores the thread's previous value. */
   public static void runWith(String id, Runnable task) {
     String previous = MDC.get(CorrelationId.MDC_KEY);
     MDC.put(CorrelationId.MDC_KEY, id);
@@ -81,10 +61,7 @@ public final class CorrelationContext {
     }
   }
 
-  /**
-   * The caller's id; a new one when there is none (e.g. a scheduler thread), so every background
-   * run is still traceable as a unit.
-   */
+  /** The caller's id, or a new one so every background run is still traceable. */
   static String captureOrGenerate() {
     String id = MDC.get(CorrelationId.MDC_KEY);
     return CorrelationId.isValid(id) ? id : CorrelationId.generate();

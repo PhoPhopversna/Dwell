@@ -25,11 +25,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.util.retry.Retry;
 
-/**
- * Idempotently makes sure the configured realm roles exist and that the bootstrap admin user exists
- * and has the admin role. Never changes an existing user's password. Failures are logged and do not
- * stop the service from starting (e.g. Keycloak still booting).
- */
+/** Idempotent; failures are logged and never stop startup. */
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -66,8 +62,7 @@ public class AdminBootstrap implements ApplicationRunner {
                       properties.adminUsername(),
                       userId,
                       properties.adminRole()))
-          // All steps are idempotent, so retry the whole thing on transient failures
-          // (e.g. Keycloak still starting).
+          // Idempotent, so retry on transient failures (e.g. Keycloak still starting)
           .retryWhen(
               Retry.backoff(3, Duration.ofSeconds(2))
                   .doBeforeRetry(

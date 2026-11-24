@@ -16,14 +16,9 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
-/**
- * Makes request data safe to log: values of sensitive fields are replaced by {@code ****} wherever
- * they appear (JSON at any depth, form bodies, query strings), JWTs and bearer tokens are masked
- * inside any other text, and bodies are capped in length.
- */
 public final class RequestDataMasker {
 
-  /** Built-in sensitive names (compared case-insensitively, '-' and '_' ignored). */
+  /** Compared case-insensitively, ignoring '-' and '_'. */
   static final Set<String> DEFAULT_FIELDS =
       Set.of(
           "password",
@@ -66,9 +61,7 @@ public final class RequestDataMasker {
     properties.maskedFields().forEach(f -> all.add(normalize(f)));
     this.fields = Set.copyOf(all);
     this.maxChars = properties.maxBodyChars();
-    // For bodies that are not valid JSON (e.g. cut off): "key":"value" / key=value / key: value
-    // Names are stored normalized ("accesstoken"); in raw text match access_token / access-token
-    // too.
+    // Fallback for invalid JSON; matches access_token, access-token and accesstoken
     String names =
         fields.stream()
             .sorted()
@@ -86,7 +79,6 @@ public final class RequestDataMasker {
     return name != null && fields.contains(normalize(name));
   }
 
-  /** Masks a raw query string ({@code a=1&password=x}); returns null for null/empty. */
   public String maskQuery(String rawQuery) {
     if (rawQuery == null || rawQuery.isEmpty()) {
       return null;
@@ -107,11 +99,6 @@ public final class RequestDataMasker {
     return truncate(out.toString(), false);
   }
 
-  /**
-   * Masks a request body of the given content type.
-   *
-   * @param captureTruncated the body was cut while capturing (it may not be complete JSON)
-   */
   public String maskBody(String body, String contentType, boolean captureTruncated) {
     if (body == null || body.isEmpty()) {
       return null;
@@ -128,7 +115,6 @@ public final class RequestDataMasker {
     return truncate(masked, captureTruncated);
   }
 
-  /** Content types whose bodies are logged; multipart and binary bodies never are. */
   public static boolean isLoggableContentType(String contentType) {
     if (contentType == null) {
       return false;
@@ -140,10 +126,7 @@ public final class RequestDataMasker {
         || type.contains("xml");
   }
 
-  /**
-   * Response content types whose bodies are logged: text, JSON and XML, but never streams (SSE,
-   * NDJSON), which may never end.
-   */
+  /** Never streams (SSE, NDJSON), which may never end. */
   public static boolean isLoggableResponseContentType(String contentType) {
     if (!isLoggableContentType(contentType)) {
       return false;
@@ -154,7 +137,6 @@ public final class RequestDataMasker {
         && !type.contains("stream+json");
   }
 
-  /** A body sent with a Content-Encoding (gzip, br, ...) is not readable text. */
   public static boolean isEncoded(String contentEncoding) {
     return contentEncoding != null
         && !contentEncoding.isBlank()

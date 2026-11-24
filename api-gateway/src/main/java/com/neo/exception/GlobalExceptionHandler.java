@@ -12,14 +12,6 @@ import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.server.ServerWebInputException;
 import reactor.core.publisher.Mono;
 
-/**
- * Errors from the gateway's own endpoints ({@code /api/routes}). Proxied requests never get here:
- * their errors come from the downstream service, or from {@code DownstreamErrorFilter} when it
- * can't be reached.
- *
- * <p>4xx are logged at WARN with the detail, 5xx at ERROR with the stack trace. The client gets the
- * {@link GenericResponse} shape with a general message for 5xx, and the correlation id.
- */
 @Slf4j
 @ControllerAdvice
 public class GlobalExceptionHandler {
@@ -27,7 +19,7 @@ public class GlobalExceptionHandler {
   static final String SERVER_ERROR = "An unexpected error occurred";
   static final String INVALID_REQUEST = "Invalid request";
 
-  /** Already logged with its context where it was raised ({@code RouteServiceImpl}). */
+  /** Already logged where it was raised. */
   @ExceptionHandler(DataBaseException.class)
   public Mono<ResponseEntity<GenericResponse<Object>>> handleDatabaseException(
       DataBaseException ex) {
@@ -42,16 +34,11 @@ public class GlobalExceptionHandler {
     return respond(status, ex.getErrorCode(), ex.getMessage(), ex.getMessage(), ex);
   }
 
-  /**
-   * Malformed JSON, a body field of the wrong type, {@code /api/routes/abc} for a numeric id, and
-   * {@code @Valid} failures ({@code WebExchangeBindException} is a subtype).
-   */
   @ExceptionHandler(ServerWebInputException.class)
   public Mono<ResponseEntity<GenericResponse<Object>>> handleBadInput(ServerWebInputException ex) {
     return respond(HttpStatus.BAD_REQUEST, "400", detail(ex), INVALID_REQUEST, ex);
   }
 
-  /** Other framework errors that carry their own status (405, 406, 415, ...). */
   @ExceptionHandler(ResponseStatusException.class)
   public Mono<ResponseEntity<GenericResponse<Object>>> handleResponseStatus(
       ResponseStatusException ex) {
@@ -84,7 +71,6 @@ public class GlobalExceptionHandler {
         ResponseEntity.status(status).body(GenericResponse.error(errorCode, clientMessage)));
   }
 
-  /** The reason plus the root cause, e.g. "Failed to read HTTP message: Unexpected character". */
   private static String detail(ResponseStatusException ex) {
     Throwable root = ex;
     while (root.getCause() != null && root.getCause() != root) {

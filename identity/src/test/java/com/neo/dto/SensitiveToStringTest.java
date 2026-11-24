@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
-/** Request/response objects must never print secrets or personal data if someone logs them. */
 class SensitiveToStringTest {
 
   @Test

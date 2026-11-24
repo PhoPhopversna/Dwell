@@ -16,7 +16,6 @@ public class GenericResponse<T> {
   private String message;
   private T data;
 
-  /** Same id as the X-Correlation-ID header; quote it when reporting a problem. */
   @JsonInclude(JsonInclude.Include.NON_NULL)
   private String correlationId = CorrelationId.current();
 

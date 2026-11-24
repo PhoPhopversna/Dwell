@@ -12,7 +12,6 @@ spring:
     init:
       mode: always
 
-  # Redis configuration - explicitly disable repositories
   data:
     redis:
       host: localhost
@@ -22,8 +21,7 @@ spring:
 
   cloud:
     gateway:
-      # Without these a hung downstream service holds the request (and a connection) forever.
-      # Connect failure -> 503 (DownstreamErrorFilter), no response in time -> 504.
+      # Connect failure -> 503 (DownstreamErrorFilter), no response in time -> 504
       httpclient:
         connect-timeout: ${GATEWAY_CONNECT_TIMEOUT_MS:5000}
         response-timeout: ${GATEWAY_RESPONSE_TIMEOUT:30s}
@@ -55,17 +53,14 @@ spring:
           issuer-uri: ${KEYCLOAK_ISSUER:http://localhost:8080/realms/Dwell}
 
 app:
-  # Loki "environment" label + JSON field. e.g. local, dev, staging, prod
   environment: ${APP_ENV:local}
-  # Shared secret added to every forwarded request; downstream services reject requests without it.
   gateway-auth:
     header-name: X-Gateway-Secret
     secret: ${GATEWAY_SECRET:dwell-dev-gateway-secret}
 
-  # JWT + role checks. Each route's allowed realm roles live in routes.roles
-  # (comma-separated, or PUBLIC). Routes with no roles are denied.
+  # Each route's allowed roles live in routes.roles (comma-separated, or PUBLIC); no roles = denied
   security:
-    admin-role: ADMIN # needed for /api/routes (route admin API)
+    admin-role: ADMIN
     public-paths: # always callable without a token, so users can obtain one
       - /identity/api/auth/login
       - /identity/api/auth/register
@@ -80,8 +75,6 @@ management:
         include: refresh,health,info,gateway,env
 
 logging:
-  # One JSON object per line (see common-logging DwellJsonLogFormatter), on console and in
-  # ${LOG_DIR}/<service>.log, which Grafana Alloy tails and ships to Loki.
   structured:
     format:
       console: ${LOG_CONSOLE_FORMAT:com.neo.logging.DwellJsonLogFormatter}
@@ -96,7 +89,6 @@ logging:
   level:
     root: ${LOG_LEVEL_ROOT:INFO}
     com.neo: ${LOG_LEVEL_APP:INFO}
-    # request/response lines (com.neo.logging.AccessLogger); DEBUG also logs "Request received"
     com.neo.logging.access: ${LOG_LEVEL_ACCESS:INFO}
-    # Unhandled errors are already logged once, with stack trace + correlationId, by the access filter.
+    # Unhandled errors are already logged once by the access filter
     org.springframework.boot.autoconfigure.web.reactive.error.AbstractErrorWebExceptionHandler: OFF

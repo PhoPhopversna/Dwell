@@ -117,17 +117,13 @@ public class KeycloakGenericConnector {
   private <T> Flux<T> applyErrorHandling(
       Flux<T> flux, String url, BiFunction<String, HttpStatus, RuntimeException> errorFactory) {
 
-    return flux
-        // Connection-level failure (e.g. Keycloak is down, DNS failure, timeout)
-        .onErrorMap(
+    return flux.onErrorMap(
             WebClientRequestException.class,
             e -> {
               log.error("Connection error reaching Keycloak [{}]: {}", url, e.getMessage());
               return errorFactory.apply(
                   "Keycloak is unreachable: connection failed", HttpStatus.SERVICE_UNAVAILABLE);
             })
-
-        // Response-level failure not caught by onStatus (should rarely occur)
         .onErrorMap(
             WebClientResponseException.class,
             e -> {
@@ -139,8 +135,6 @@ public class KeycloakGenericConnector {
               return errorFactory.apply(
                   "Unexpected response from Keycloak", HttpStatus.SERVICE_UNAVAILABLE);
             })
-
-        // Any other unchecked exception not already wrapped by our factory
         .onErrorMap(
             e -> !(e instanceof RuntimeException) || isUnmappedRuntimeException(e),
             e -> {
@@ -151,7 +145,6 @@ public class KeycloakGenericConnector {
             });
   }
 
-  /** True when the exception was NOT already produced by our errorFactory chain. */
   private boolean isUnmappedRuntimeException(Throwable e) {
     return false;
   }

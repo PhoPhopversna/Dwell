@@ -15,10 +15,6 @@ import org.springframework.http.MediaType;
 import org.springframework.util.AntPathMatcher;
 import org.springframework.web.filter.OncePerRequestFilter;
 
-/**
- * Rejects requests that do not carry the gateway's shared secret, so clients must go through the
- * API gateway instead of calling this service directly.
- */
 @Slf4j
 public class GatewayAuthFilter extends OncePerRequestFilter {
 

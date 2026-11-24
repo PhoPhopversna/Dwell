@@ -26,18 +26,6 @@ import reactor.core.publisher.Mono;
 import reactor.core.publisher.SignalType;
 import reactor.util.context.Context;
 
-/**
- * First filter of every WebFlux service (API gateway, identity).
- *
- * <ol>
- *   <li>Reuses a valid incoming {@code X-Correlation-ID} or generates one.
- *   <li>Sets it on the request (so the gateway forwards exactly this id downstream and any code
- *       reading the header sees it), in the Reactor context (-> MDC on every thread, see {@link
- *       ReactorMdcPropagation}) and on the response.
- *   <li>Writes one access-log line when the request finishes, including failures, with the masked
- *       request and response data.
- * </ol>
- */
 public class CorrelationIdWebFilter implements WebFilter, Ordered {
 
   private static final Logger LOG = LoggerFactory.getLogger(CorrelationIdWebFilter.class);
@@ -91,7 +79,7 @@ public class CorrelationIdWebFilter implements WebFilter, Ordered {
         .getResponse()
         .beforeCommit(
             () -> {
-              // set() so a downstream service's own header is not duplicated
+              // set(): don't duplicate a downstream service's own header
               tracked.getResponse().getHeaders().set(CorrelationId.HEADER, id);
               return Mono.empty();
             });
@@ -105,8 +93,7 @@ public class CorrelationIdWebFilter implements WebFilter, Ordered {
           AccessLogger.requestReceived(method, path);
         });
 
-    // doOnSuccess/doOnError/doOnCancel run before the signal reaches the subscriber (unlike
-    // doFinally), so the completion line is always written before the request is done.
+    // Unlike doFinally, these run before the subscriber sees the signal
     return chain
         .filter(tracked)
         .doOnSuccess(
@@ -167,7 +154,7 @@ public class CorrelationIdWebFilter implements WebFilter, Ordered {
     int status;
     Throwable unexpected = null;
     if (error instanceof ResponseStatusException rse) {
-      // Expected HTTP outcomes (e.g. 404 no route): no stack trace unless it is a 5xx.
+      // Expected HTTP outcome (e.g. 404): stack trace only for 5xx
       status = rse.getStatusCode().value();
       unexpected = status >= 500 ? error : null;
     } else if (error != null) {
@@ -203,7 +190,6 @@ public class CorrelationIdWebFilter implements WebFilter, Ordered {
     return new AccessLogger.ResponseData(contentType, body);
   }
 
-  /** Copies the readable bytes of {@code buffer} (without consuming them) into {@code capture}. */
   private static void copy(DataBuffer buffer, BoundedCapture capture) {
     int readable = buffer.readableByteCount();
     int length = Math.min(readable, Math.max(capture.remaining(), 0));
@@ -218,11 +204,6 @@ public class CorrelationIdWebFilter implements WebFilter, Ordered {
     }
   }
 
-  /**
-   * Copies the first {@code maxBytes} of the body as it streams to the handler or the proxied
-   * service. Nothing is read ahead or buffered beyond that cap, and the body is consumed exactly
-   * once by whoever normally reads it.
-   */
   static final class BodyCapturingRequest extends ServerHttpRequestDecorator {
 
     final BoundedCapture capture;
@@ -238,12 +219,6 @@ public class CorrelationIdWebFilter implements WebFilter, Ordered {
     }
   }
 
-  /**
-   * Copies the first {@code maxBytes} of the response body as it is written to the client (or, in
-   * the gateway, as the proxied service's response is relayed). Decides when the body is written,
-   * once the content type is known: binary, compressed and streaming responses pass through
-   * untouched and are not logged.
-   */
   static final class BodyCapturingResponse extends ServerHttpResponseDecorator {
 
     final BoundedCapture capture;
@@ -271,7 +246,6 @@ public class CorrelationIdWebFilter implements WebFilter, Ordered {
     // writeAndFlushWith is only used for streaming responses: never captured.
   }
 
-  /** Runs {@code action} with the id in the MDC, then restores the previous value. */
   static void withMdc(String id, Runnable action) {
     String previous = MDC.get(CorrelationId.MDC_KEY);
     MDC.put(CorrelationId.MDC_KEY, id);

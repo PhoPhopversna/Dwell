@@ -133,8 +133,6 @@ class CorrelationIdServletFilterTest {
     assertThat(value(done, "query")).isEqualTo("debug=true&password=****");
   }
 
-  // ---------- response body ----------
-
   @Test
   void responseBodyWrittenToTheStreamIsLoggedMasked_andTheClientGetsItUnchanged() throws Exception {
     String json =

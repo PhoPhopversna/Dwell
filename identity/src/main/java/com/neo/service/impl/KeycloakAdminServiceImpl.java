@@ -35,7 +35,6 @@ public class KeycloakAdminServiceImpl {
     this.redisTemplate = redisTemplate;
   }
 
-  // ─── Get Access Token From Redis ──────────────────────────
   public Mono<String> getAccessTokenCache() {
     return redisTemplate
         .opsForValue()
@@ -46,7 +45,6 @@ public class KeycloakAdminServiceImpl {
             );
   }
 
-  // ─── Get Refresh Token From Redis ──────────────────────────
   private Mono<String> tryRefreshTokenCache() {
     return redisTemplate
         .opsForValue()
@@ -159,7 +157,6 @@ public class KeycloakAdminServiceImpl {
     Duration accessTtl = Duration.ofSeconds(keycloakProperties.getTokenTtl());
     Duration refreshTtl = Duration.ofSeconds(keycloakProperties.getRefreshTokenTtl());
 
-    // Cache access token
     Mono<Boolean> cacheAccess =
         redisTemplate.opsForValue().set(ACCESS_TOKEN_KEY, accessToken, accessTtl);
 
@@ -174,7 +171,6 @@ public class KeycloakAdminServiceImpl {
         .thenReturn(accessToken);
   }
 
-  // ─── Force refresh (call on 401 from downstream) ──────────────────────────
   public Mono<String> forceRefresh() {
     log.debug("Force refreshing tokens");
     return redisTemplate
@@ -182,7 +178,6 @@ public class KeycloakAdminServiceImpl {
         .then(getAccessTokenCache()); // will try refresh token first
   }
 
-  // ─── Clear everything and re-login ────────────────────────
   public Mono<String> forceFullRefresh() {
     log.warn("Force full re-login, clearing all cached tokens");
     return redisTemplate.delete(ACCESS_TOKEN_KEY, REFRESH_TOKEN_KEY).then(fetchFreshTokens());

@@ -11,13 +11,6 @@ import org.slf4j.MDC;
 import org.springframework.kafka.listener.RecordInterceptor;
 import org.springframework.stereotype.Component;
 
-/**
- * Consumer side of correlation-id propagation, applied by Spring Boot to every
- * {@code @KafkaListener}. Puts the record's {@code X-Correlation-ID} in the MDC before the listener
- * runs (generating one only for records produced without it), logs one structured line per
- * processed record, and clears the MDC after the listener and any error handling have finished, so
- * the consumer thread never carries an id into the next record.
- */
 @Component
 public class CorrelationIdRecordInterceptor implements RecordInterceptor<Object, Object> {
 
@@ -51,7 +44,7 @@ public class CorrelationIdRecordInterceptor implements RecordInterceptor<Object,
       ConsumerRecord<Object, Object> record,
       Exception exception,
       Consumer<Object, Object> consumer) {
-    // Stack trace is logged by the container's error handler (still inside this MDC).
+    // Stack trace is logged by the container's error handler
     LOG.atWarn()
         .addKeyValue("event", "kafka_message_failed")
         .addKeyValue("topic", record.topic())

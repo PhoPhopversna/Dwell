@@ -20,20 +20,7 @@ import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
 import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.kafka.support.ExponentialBackOffWithMaxRetries;
 
-/**
- * What happens when a {@code @KafkaListener} throws (Spring Boot applies this bean to every
- * listener container):
- *
- * <ol>
- *   <li>Retried 3 times with backoff (1s, 2s, 4s), so a short MinIO or database outage heals.
- *   <li>Then logged at ERROR and published to {@code <topic>.DLT} with the exception in the record
- *       headers, so nothing is silently dropped and the message can be inspected or replayed.
- *   <li>A failed image upload event also marks the image FAILED, so the UI stops waiting.
- * </ol>
- *
- * Messages that cannot be deserialized (see {@code ErrorHandlingDeserializer} in application.yml)
- * are not retried: they go straight to the DLT with their original bytes.
- */
+/** 3 retries with backoff, then {@code <topic>.DLT}. See docs/LOGGING.md. */
 @Slf4j
 @Configuration
 public class KafkaErrorHandlingConfig {
@@ -46,7 +33,7 @@ public class KafkaErrorHandlingConfig {
       ProducerFactory<?, ?> producerFactory,
       ObjectProvider<ImageProcessingConsumer> imageConsumer) {
 
-    // Records that failed deserialization only have their raw bytes: publish those as-is.
+    // Undeserializable records only have raw bytes: publish them as-is
     KafkaTemplate<String, byte[]> bytesTemplate =
         new KafkaTemplate<>(
             new DefaultKafkaProducerFactory<>(
@@ -57,7 +44,7 @@ public class KafkaErrorHandlingConfig {
     templates.put(byte[].class, bytesTemplate);
     templates.put(Object.class, jsonTemplate);
 
-    // partition -1: let the producer choose, the DLT may have fewer partitions than the topic
+    // Partition -1: the DLT may have fewer partitions than the topic
     DeadLetterPublishingRecoverer deadLetter =
         new DeadLetterPublishingRecoverer(
             templates, (record, ex) -> new TopicPartition(record.topic() + ".DLT", -1));
@@ -85,10 +72,8 @@ public class KafkaErrorHandlingConfig {
               deadLetter.accept(record, ex);
             },
             backOff);
-    // The per-attempt failure is already logged by CorrelationIdRecordInterceptor.
     handler.setLogLevel(org.springframework.kafka.KafkaException.Level.DEBUG);
-    // Listeners ack manually (MANUAL_IMMEDIATE): commit the dead-lettered record's offset too,
-    // or it is delivered (and dead-lettered) again after every restart or rebalance.
+    // Manual acks: commit dead-lettered offsets too, or they come back after a restart
     handler.setCommitRecovered(true);
     return handler;
   }

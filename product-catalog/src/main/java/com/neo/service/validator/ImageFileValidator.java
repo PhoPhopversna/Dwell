@@ -6,17 +6,13 @@ import java.util.Locale;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.multipart.MultipartFile;
 
-/**
- * Checks uploaded image files before anything is stored. Run on the whole list first, so a bad file
- * in the middle of a multi-file upload is rejected before earlier files reach MinIO.
- */
 public final class ImageFileValidator {
 
   public static final String INVALID_IMAGE = "INVALID_IMAGE";
 
   private ImageFileValidator() {}
 
-  /** Each file must be a non-empty image; an empty list is allowed (e.g. update without images). */
+  /** An empty list is allowed (e.g. update without new images). */
   public static void validate(List<MultipartFile> files) {
     if (files != null) {
       files.forEach(ImageFileValidator::validate);
@@ -34,10 +30,7 @@ public final class ImageFileValidator {
     }
   }
 
-  /**
-   * Object-name-safe version of the client's file name: no path, only {@code [A-Za-z0-9._-]}, at
-   * most 100 chars. The name ends up in a public URL, where spaces or slashes would break it.
-   */
+  /** Safe for a public URL: no path, only [A-Za-z0-9._-], max 100 chars. */
   public static String safeFileName(String originalFilename) {
     String name = originalFilename == null ? "" : originalFilename;
     name = name.substring(Math.max(name.lastIndexOf('/'), name.lastIndexOf('\\')) + 1);

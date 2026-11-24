@@ -1,5 +1,4 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- JSON logs to console + rolling file (shipped to Loki by Alloy). See common-logging. -->
 <configuration>
 	<include resource="org/springframework/boot/logging/logback/defaults.xml"/>
 	<property name="LOG_FILE" value="${LOG_FILE:-${LOG_PATH:-${LOG_TEMP:-${java.io.tmpdir:-/tmp}}}/spring.log}"/>

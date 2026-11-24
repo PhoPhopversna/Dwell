@@ -23,20 +23,6 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.task.TaskDecorator;
 
-/**
- * Applies correlation-id propagation to every service that depends on common-logging, without any
- * code in the service:
- *
- * <ul>
- *   <li>{@code @Async} / injected {@code TaskExecutor} ({@code applicationTaskExecutor}): runs with
- *       the submitting request's id.
- *   <li>{@code @Scheduled}: each execution gets its own new id.
- *   <li>{@code WebClient}, {@code RestTemplate}, {@code RestClient} built from Spring Boot's
- *       builders: send {@code X-Correlation-ID} to the called service.
- * </ul>
- *
- * Runs before Boot's own task/client auto-configurations so their builders pick these beans up.
- */
 @AutoConfiguration(
     beforeName = {
       "org.springframework.boot.autoconfigure.web.servlet.error.ErrorMvcAutoConfiguration",
@@ -52,14 +38,13 @@ import org.springframework.core.task.TaskDecorator;
 @EnableConfigurationProperties(RequestLoggingProperties.class)
 public class CorrelationLoggingAutoConfiguration {
 
-  /** Picked up by Boot's ThreadPoolTaskExecutorBuilder (applicationTaskExecutor, @Async). */
   @Bean
   @ConditionalOnMissingBean(TaskDecorator.class)
   public CorrelationTaskDecorator correlationTaskDecorator() {
     return new CorrelationTaskDecorator();
   }
 
-  /** Boot's scheduler builder has no TaskDecorator hook, so set it through a customizer. */
+  /** The scheduler builder has no TaskDecorator hook, so set it through a customizer. */
   @Bean
   public ThreadPoolTaskSchedulerCustomizer correlationTaskSchedulerCustomizer() {
     CorrelationTaskDecorator decorator = new CorrelationTaskDecorator();
@@ -97,7 +82,6 @@ public class CorrelationLoggingAutoConfiguration {
     }
   }
 
-  /** Spring's default error body ({"timestamp","status","error","path"}) + "correlationId". */
   @Configuration(proxyBeanMethods = false)
   @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
   @ConditionalOnClass(name = "org.springframework.web.servlet.HandlerExceptionResolver")

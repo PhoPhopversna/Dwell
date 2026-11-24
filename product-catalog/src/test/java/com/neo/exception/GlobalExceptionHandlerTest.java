@@ -10,7 +10,6 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
-/** Safe business messages reach the client; anything revealing internals is replaced. */
 class GlobalExceptionHandlerTest {
 
   private final GlobalExceptionHandler handler = new GlobalExceptionHandler();
@@ -92,8 +91,6 @@ class GlobalExceptionHandlerTest {
     assertThat(r.getStatusCode().value()).isEqualTo(500);
     assertThat(message(r)).isEqualTo("An unexpected error occurred");
   }
-
-  // ---------- framework exceptions: same response shape as everything else ----------
 
   @Test
   void validationErrorsListTheFieldsButNotTheRejectedValues() throws Exception {

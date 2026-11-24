@@ -13,7 +13,6 @@ import org.springframework.validation.BeanPropertyBindingResult;
 import org.springframework.web.bind.support.WebExchangeBindException;
 import org.springframework.web.server.ServerWebInputException;
 
-/** Clients get a general message per status; details (user, role, Keycloak body) never leak. */
 class GlobalExceptionHandlerTest {
 
   private final GlobalExceptionHandler handler = new GlobalExceptionHandler();

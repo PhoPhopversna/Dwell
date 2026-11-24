@@ -14,12 +14,6 @@ import org.springframework.security.web.server.ServerAuthenticationEntryPoint;
 import org.springframework.security.web.server.authorization.ServerAccessDeniedHandler;
 import reactor.core.publisher.Mono;
 
-/**
- * Validates the Keycloak JWT on every request (an invalid or expired token is rejected with 401).
- * The gateway's own route-admin API needs the admin role. Proxied routes are authorized per route
- * by {@link RouteAuthorizationFilter}, because the matched route is only known after this chain has
- * run.
- */
 @Slf4j
 @Configuration
 @EnableWebFluxSecurity
@@ -52,11 +46,7 @@ public class SecurityConfig {
         .build();
   }
 
-  /**
-   * 401 without detail. Spring's default puts the decoder error (e.g.
-   * "java.lang.IllegalStateException: Expected BEGIN_OBJECT ...") in WWW-Authenticate; that detail
-   * is only logged here.
-   */
+  /** 401 without the decoder detail Spring would put in WWW-Authenticate. */
   private ServerAuthenticationEntryPoint authenticationEntryPoint() {
     return (exchange, ex) ->
         Mono.defer(
@@ -75,7 +65,6 @@ public class SecurityConfig {
             });
   }
 
-  /** 403 without naming the required role; the role is logged instead. */
   private ServerAccessDeniedHandler accessDeniedHandler(String adminRole) {
     return (exchange, denied) ->
         Mono.defer(

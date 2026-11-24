@@ -95,9 +95,7 @@ public class ProductServiceImpl implements ProductService {
     product.setSku(productRequest.getSku());
     product.setBasePrice(productRequest.getBasePrice());
     product.setCostPrice(productRequest.getCostPrice());
-    // Variants are not mapped from the request (ProductMapper ignores them), so leave the
-    // existing collection untouched. Replacing it would make Hibernate fail on the
-    // orphanRemoval collection and would delete every existing variant.
+    // Leave variants untouched: replacing the orphanRemoval collection would delete them all.
     product.setStatus(productRequest.getStatus());
     log.debug("Saved Products : {}", product);
     for (MultipartFile image : images) {
@@ -108,8 +106,7 @@ public class ProductServiceImpl implements ProductService {
 
   @Override
   public void deleteProduct(UUID productId) {
-    // Delete the row (images and variants cascade) inside a transaction, then publish the MinIO
-    // cleanup events only after it commits so files are never removed for a rolled-back delete.
+    // Delete in a transaction, then publish MinIO cleanup only after it commits.
     List<ProductImageDeletedEvent> events =
         transactionTemplate.execute(
             status -> {

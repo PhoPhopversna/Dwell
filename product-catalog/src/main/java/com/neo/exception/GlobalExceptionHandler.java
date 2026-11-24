@@ -19,21 +19,6 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.multipart.support.MissingServletRequestPartException;
 
-/**
- * What a client may see:
- *
- * <ul>
- *   <li>Messages written by this service about the client's own input are kept: attribute
- *       validation errors, "Product not found: {id}", "Variant SKU already exists: {sku}", category
- *       hierarchy rules. They describe the request, not the system.
- *   <li>Anything that could come from a library, the JPA provider, the database or a 5xx is
- *       replaced by a general message: class/package names, SQL and driver details, MinIO/Kafka
- *       errors.
- * </ul>
- *
- * The full detail is always logged (WARN for 4xx, ERROR + stack trace for 5xx) with the request's
- * correlation id, which the client receives in the X-Correlation-ID response header.
- */
 @Slf4j
 @ControllerAdvice
 public class GlobalExceptionHandler {
@@ -44,11 +29,7 @@ public class GlobalExceptionHandler {
   static final String MALFORMED_BODY = "Malformed request body";
   static final String FILE_TOO_LARGE = "Uploaded file is too large";
 
-  /**
-   * Shape of this service's own not-found messages ("Product not found: 3fa8..."). The JPA provider
-   * throws the same exception type with messages like "Unable to find com.neo.entity.Product with
-   * id ...", which reveal internals and must not be returned.
-   */
+  /** Our own not-found messages; JPA's ("Unable to find com.neo...") reveal internals. */
   private static final Pattern OWN_NOT_FOUND =
       Pattern.compile("^[A-Z][A-Za-z ]{0,40} not found(: [A-Za-z0-9_-]{1,64})?$");
 
@@ -58,7 +39,6 @@ public class GlobalExceptionHandler {
     return error(ex.getStatus(), ex.getMessage(), ex);
   }
 
-  /** Our own business errors: the message is safe for 4xx; 5xx are always general. */
   @ExceptionHandler(AppException.class)
   public ResponseEntity<CustomApiResponse<Void>> handleAppException(AppException ex) {
     return error(ex.getStatus(), ex.getMessage(), ex);
@@ -72,14 +52,13 @@ public class GlobalExceptionHandler {
     return error(HttpStatus.NOT_FOUND, message, own ? message : NOT_FOUND, ex);
   }
 
-  /** Raised by libraries as well as our code; its message is never trusted for the client. */
+  /** Also raised by libraries, so its message is never returned. */
   @ExceptionHandler(IllegalArgumentException.class)
   public ResponseEntity<CustomApiResponse<Void>> handleIllegalArgument(
       IllegalArgumentException ex) {
     return error(HttpStatus.BAD_REQUEST, ex.getMessage(), INVALID_REQUEST, ex);
   }
 
-  /** Unique-constraint (duplicate SKU) or FK violations (category still in use). */
   @ExceptionHandler(DataIntegrityViolationException.class)
   public ResponseEntity<CustomApiResponse<Void>> handleConflict(
       DataIntegrityViolationException ex) {
@@ -90,11 +69,7 @@ public class GlobalExceptionHandler {
         ex);
   }
 
-  /**
-   * {@code @Valid} failures on a {@code @RequestBody} / {@code @RequestPart}. The field names and
-   * constraint messages ("name: must not be blank") describe the client's own input, so they are
-   * returned; rejected values are not, as they may be sensitive.
-   */
+  /** Field names and messages are returned, rejected values are not. */
   @ExceptionHandler(MethodArgumentNotValidException.class)
   public ResponseEntity<CustomApiResponse<Void>> handleValidation(
       MethodArgumentNotValidException ex) {
@@ -102,14 +77,12 @@ public class GlobalExceptionHandler {
         HttpStatus.BAD_REQUEST, "Validation failed: " + fieldErrors(ex.getBindingResult()), ex);
   }
 
-  /** Invalid JSON, wrong JSON types (text for a number, unknown enum value), empty body. */
   @ExceptionHandler(HttpMessageNotReadableException.class)
   public ResponseEntity<CustomApiResponse<Void>> handleUnreadable(
       HttpMessageNotReadableException ex) {
     return error(HttpStatus.BAD_REQUEST, ex.getMessage(), MALFORMED_BODY, ex);
   }
 
-  /** e.g. {@code /api/categories/abc} where a UUID is expected. */
   @ExceptionHandler(MethodArgumentTypeMismatchException.class)
   public ResponseEntity<CustomApiResponse<Void>> handleTypeMismatch(
       MethodArgumentTypeMismatchException ex) {
@@ -145,10 +118,6 @@ public class GlobalExceptionHandler {
     return error(HttpStatus.PAYLOAD_TOO_LARGE, ex.getMessage(), FILE_TOO_LARGE, ex);
   }
 
-  /**
-   * Everything else. Spring MVC's own exceptions (404 no handler, 405 method, 415 media type, ...)
-   * carry their status; anything unknown is a 500. Only a general message reaches the client.
-   */
   @ExceptionHandler(Exception.class)
   public ResponseEntity<CustomApiResponse<Void>> handleUnexpected(Exception ex) {
     HttpStatus status = HttpStatus.INTERNAL_SERVER_ERROR;
@@ -193,10 +162,6 @@ public class GlobalExceptionHandler {
     return error(status, message, message, ex);
   }
 
-  /**
-   * @param detail logged only
-   * @param clientMessage returned to the client (replaced by a general message for 5xx)
-   */
   private static ResponseEntity<CustomApiResponse<Void>> error(
       HttpStatus status, String detail, String clientMessage, Exception ex) {
     if (status.is5xxServerError()) {

@@ -46,10 +46,7 @@ public class WebClientConfig {
         .build();
   }
 
-  /**
-   * Drops idle pooled connections before Keycloak/proxies close them, so a request never goes out
-   * on a dead connection ("Connection prematurely closed BEFORE response").
-   */
+  /** Evicts idle connections before Keycloak closes them ("prematurely closed"). */
   private ConnectionProvider connectionProvider() {
     return ConnectionProvider.builder("keycloak")
         .maxIdleTime(Duration.ofSeconds(20))

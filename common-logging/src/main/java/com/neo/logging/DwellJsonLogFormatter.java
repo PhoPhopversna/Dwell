@@ -13,18 +13,6 @@ import org.springframework.boot.json.JsonWriter;
 import org.springframework.boot.logging.structured.StructuredLogFormatter;
 import org.springframework.core.env.Environment;
 
-/**
- * One JSON object per line, identical across services:
- *
- * <pre>{"timestamp":"2026-11-23T10:30:45.123Z","level":"INFO","service":"product-catalog",
- * "environment":"local","correlationId":"abc","logger":"...","thread":"...",
- * "message":"Request completed","method":"GET","path":"/api/products","status":200,
- * "durationMs":125}</pre>
- *
- * <p>Structured fields come from SLF4J key/value pairs ({@code log.atInfo().addKeyValue(..)}).
- * Messages and string fields go through {@link SensitiveDataMasker}. Activated with {@code
- * logging.structured.format.console/file=com.neo.logging.DwellJsonLogFormatter}.
- */
 public class DwellJsonLogFormatter implements StructuredLogFormatter<ILoggingEvent> {
 
   private static final DateTimeFormatter TIMESTAMP =
@@ -60,7 +48,6 @@ public class DwellJsonLogFormatter implements StructuredLogFormatter<ILoggingEve
     return writer.writeToString(event);
   }
 
-  /** SLF4J key/value pairs as top-level JSON fields (never overriding the fixed ones). */
   private static Map<String, Object> fields(ILoggingEvent event) {
     if (event.getKeyValuePairs() == null || event.getKeyValuePairs().isEmpty()) {
       return Map.of();

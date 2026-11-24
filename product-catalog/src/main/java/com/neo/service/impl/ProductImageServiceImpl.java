@@ -79,10 +79,9 @@ public class ProductImageServiceImpl implements ProductImageService {
           PutObjectArgs.builder().bucket(bucket).object(objectName).stream(is, file.getSize(), -1)
               .contentType(file.getContentType())
               .build());
-      // Throws if the object is not there, which aborts the transaction before the row is saved.
+      // Throws if the object is missing, aborting the transaction before the row is saved
       minioClient.statObject(StatObjectArgs.builder().bucket(bucket).object(objectName).build());
     } catch (MinioException | GeneralSecurityException | IOException e) {
-      // MinIO down, bucket missing, bad credentials, upload cut off: 503, full detail in the log.
       throw new AppException(
           HttpStatus.SERVICE_UNAVAILABLE,
           "IMAGE_STORAGE_UNAVAILABLE",
@@ -96,7 +95,7 @@ public class ProductImageServiceImpl implements ProductImageService {
     product.addImage(image);
     ProductImage saved = productImageRepository.save(image);
 
-    // The consumer skips images whose row it cannot see, so publish only once the row is committed.
+    // Publish only after commit: the consumer skips rows it can't see
     ProductImageUploadedEvent event =
         new ProductImageUploadedEvent(saved.getId(), productId, objectName);
     afterCommit(() -> kafkaPublisher.publishImageUploaded(saved.getId().toString(), event));
@@ -147,12 +146,12 @@ public class ProductImageServiceImpl implements ProductImageService {
               ProductImageDeletedEvent e = toDeletedEvent(image, productId);
               product.getImages().remove(image);
               productImageRepository.delete(image);
-              // Close the gap so the next upload's position (images.size()) stays unique.
+              // Close the gap so the next position (images.size()) stays unique
               renumber(product.getImages());
               return e;
             });
 
-    // Published after the transaction so files are never removed for a rolled-back delete.
+    // After the transaction, so files are never removed for a rolled-back delete
     kafkaPublisher.deleteImage(imageId.toString(), event);
   }
 

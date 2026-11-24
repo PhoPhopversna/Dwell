@@ -6,13 +6,10 @@ import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-/** Helpers for the comma-separated {@code routes.roles} column and route metadata. */
 public final class RouteRoles {
 
-  /** Route metadata key holding the allowed roles. */
   public static final String METADATA_KEY = "roles";
 
-  /** Special role: the route can be called without a token. */
   public static final String PUBLIC = "PUBLIC";
 
   private RouteRoles() {}

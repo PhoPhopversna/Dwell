@@ -41,11 +41,6 @@ import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 import reactor.util.context.Context;
 
-/**
- * Boots Spring Boot's real task/client auto-configuration plus ours, exactly as a service does, and
- * checks that plain {@code @Async}, {@code @Scheduled}, and clients built from Boot's builders
- * carry the correlation id with no extra code.
- */
 class CorrelationLoggingAutoConfigurationTest {
 
   private final ApplicationContextRunner runner =
@@ -63,8 +58,6 @@ class CorrelationLoggingAutoConfigurationTest {
   void clear() {
     MDC.clear();
   }
-
-  // ---------- @Async ----------
 
   @Configuration
   @EnableAsync
@@ -121,8 +114,6 @@ class CorrelationLoggingAutoConfigurationTest {
         });
   }
 
-  // ---------- @Scheduled ----------
-
   @Configuration
   @EnableScheduling
   static class SchedulingConfig {
@@ -147,8 +138,6 @@ class CorrelationLoggingAutoConfigurationTest {
               assertThat(second).isNotEqualTo(first);
             });
   }
-
-  // ---------- HTTP clients ----------
 
   @Test
   void restTemplateFromBuilderSendsTheHeader() {

@@ -47,8 +47,7 @@ public class RouteForwardServiceImpl implements RouteLocator {
 
   private Buildable<Route> setPredicateSpec(PredicateSpec predicateSpec, ApiRoute apiRoute) {
     boolean anyMethod = apiRoute.getMethod() == null || apiRoute.getMethod().isBlank();
-    // Method-specific routes are matched before catch-all ones, so e.g. a GET row can grant
-    // wider access than the catch-all row for the same path.
+    // Method-specific routes are matched before catch-all ones.
     BooleanSpec booleanSpec = predicateSpec.order(anyMethod ? 1 : 0).path(apiRoute.getPath());
     if (!anyMethod) {
       booleanSpec = booleanSpec.and().method(apiRoute.getMethod());
