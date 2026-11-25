@@ -140,12 +140,12 @@ The client only gets a general message per status (`Invalid request`, `Authentic
 |---|---|
 | `controller` | `AuthController`, `RoleController`, `UserController` |
 | `service.impl` | `KeycloakAuthServiceImpl` (register/login/refresh/logout), `UserServiceImpl` (`app_user` sync, audit), `UserAdminServiceImpl` (activate/deactivate), `RoleServiceImpl`, `KeycloakAdminServiceImpl` (admin token + Redis), `KeycloakGenericConnector` (HTTP calls + Keycloak error mapping) |
-| `bootstrap` | `AdminBootstrap`, `BootstrapProperties` |
+| `bootstrap` | `AdminBootstrap`, `BootstrapProperties`, `KeycloakRealmSecurityCheck` (startup security check) |
 | `config` | `GatewayAuthWebFilter`, `SecurityConfig`, `WebClientConfig`, `DatabaseConfig`, `LoggingConfig` |
 | `dto` | Requests and responses; `TokenClaims` reads `sub`, username, email and names from a token |
 | `exception` | `GlobalExceptionHandler`, `AuthException`, `ConflictException` |
 
-## Tests (40)
+## Tests (46)
 
 For how each test works (setup, action and checks), see [testing/identity.md](../testing/identity.md).
 
@@ -193,8 +193,35 @@ Run with `mvn -pl identity test`. All are unit tests: Keycloak is replaced by a 
 **`SensitiveToStringTest`**: logging an object never prints secrets.
 - `LoginRequest` hides the password; `RegisterRequest` hides the password and email; `TokenResponse` hides the tokens.
 
+## Keycloak realm security
+
+Two realm settings would let **any registered user administer the realm** through Keycloak's admin API: list, change and delete users. Both were found in the Dwell realm and fixed (local environment, 2026-11-25).
+
+| Setting | Must be | Why |
+|---|---|---|
+| Realm default roles (`default-roles-dwell`) | **No** `realm-management` roles (e.g. `manage-users`) | Every user gets the default roles, so an admin role there makes every user an admin of the realm |
+| Dwell realm's `admin-cli` client | **Direct access grants off** | It's a public client: with direct access grants on, anyone can swap a username and password for a token there |
+
+identity's own admin calls are not affected: its service account (`service-account-dwell-client`) has its roles assigned directly.
+
+**Startup check.** On every start, identity checks both settings (`KeycloakRealmSecurityCheck`) and logs:
+- `INFO Keycloak realm Dwell security check passed`, or
+- `ERROR Keycloak realm Dwell is insecure: ...`, naming each problem.
+
+It only reads; it never changes Keycloak or stops startup. If Keycloak can't be reached it logs a WARN. Turn it off with `app.keycloak.security-check.enabled=false`.
+
+**How to fix it** (Keycloak admin console, realm Dwell; do it in every environment that logs the ERROR):
+1. *Realm settings → User registration → Default roles*: remove every `realm-management` role.
+2. *Clients → admin-cli → Settings → Capability config*: turn off *Direct access grants*.
+3. *Sessions → Sign out all active sessions*, so tokens already issued with the old roles stop working. Everyone, including identity's cached admin token, gets a new token on the next call.
+4. Restart identity and check that the startup log says `security check passed`.
+
+**Checking it by hand:**
+- A token for `admin-cli` with a username and password must be refused (`unauthorized_client`).
+- A normal user's token must get **403** from `GET <keycloak>/admin/realms/Dwell/users`.
+
 ## Known issues
 
-- **Security: every user can read and change all users through Keycloak's admin API.** The realm's default roles (`default-roles-dwell`) include `realm-management` → `manage-users`, and the Dwell realm's public `admin-cli` client accepts a username and password. Any registered user can get a token there and list (verified), change or delete users. Fix: remove `manage-users` from `default-roles-dwell`, and turn off direct access grants on the Dwell realm's `admin-cli`. identity is not affected by that change: its service account has `manage-users` assigned directly.
+- **identity's service account is `realm-admin`** (full control of the realm), and the `dwell-client` secret's default value is committed in `application.yml`. Reduce the service account to `manage-users`, `view-users`, `query-users` and `manage-realm`, set `KEYCLOAK_CLIENT_SECRET` in every non-local environment, and rotate the secret.
 - **New users have no application role,** so they get 403 on the catalog until an admin assigns `CUSTOMER`. To change this, add `CUSTOMER` to the realm's default roles.
 - **`created_by` can be set by any client** on the public register endpoint.

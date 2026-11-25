@@ -1,4 +1,4 @@
-# identity tests (40)
+# identity tests (46)
 
 `mvn -pl identity test`. No Keycloak, database or Redis needed: Keycloak is replaced by a stub `WebClient` or a mocked connector, and the database by mocked repositories. Reactive results are read with `.block()`. See the [testing guide](README.md) for the patterns used. Service behaviour: [identity](../services/identity.md).
 
@@ -73,6 +73,19 @@ Calls the handler methods directly. A helper `assertGeneral` checks the status, 
 | `keycloakUnreachableIs503` | `WebClientRequestException` (connection refused to the Keycloak URL) | 503; no port or realm in the message |
 | `unmappedKeycloakErrors_5xxIs503_otherwise500` | `WebClientResponseException` 502, then 400 `invalid_client` | 503, then 500; Keycloak's error text not shown |
 | `localDuplicateIs409` | `DataIntegrityViolationException` (unique constraint) | 409; constraint name not shown |
+
+## `KeycloakRealmSecurityCheckTest` (6): startup security check
+
+**Setup:** `KeycloakRealmSecurityCheck` with a mocked admin service (token `t`) and a mocked connector. The connector answers the realm (default role `default-roles-dwell`), the `realm-management` client (id `rm-id`), the default role's `realm-management` roles, and the `admin-cli` client.
+
+| Test | How it works | Checks |
+|---|---|---|
+| `safeRealmHasNoProblems` | No admin roles in the default role; `admin-cli` without direct access grants | No problems |
+| `adminRoleInTheDefaultRolesIsReported` | Default role contains `manage-users` | One problem naming "every user" and `manage-users` |
+| `passwordLoginOnAdminCliIsReported` | `admin-cli` public with direct access grants | One problem naming `admin-cli` |
+| `bothProblemsAreReportedTogether` | Both, with two admin roles | Two problems; the first lists both roles |
+| `keycloakDownNeverStopsStartup` | Getting the admin token fails (connection refused) | `run()` doesn't throw: startup goes on, a WARN is logged |
+| `revokedAdminTokenIsRefreshedOnce` | The cached token gets 401 (e.g. all sessions were ended) | Retries with a fresh token and still finds the problem |
 
 ## `GatewayAuthWebFilterTest` (5): gateway-only access
 
