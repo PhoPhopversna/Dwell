@@ -8,7 +8,7 @@ Start here. This page explains how the system fits together and how to run it. E
 | [identity](services/identity.md) | Register, login, refresh and logout (Keycloak), roles, activating and deactivating users |
 | [product-catalog](services/product-catalog.md) | Categories, attributes, products, variants, images (MinIO), Kafka image events |
 | [common-logging](services/common-logging.md) | Shared JSON logging, correlation id, masking (used by all three services) |
-| [Testing guide](testing/README.md) | How the tests are built, and what each of the 277 tests sets up, does and checks |
+| [Testing guide](testing/README.md) | How the tests are built, and what each of the 283 tests sets up, does and checks |
 | [LOGGING.md](LOGGING.md) | Logging, Loki and Grafana, and the error-handling rules in depth |
 | [WebclientUsage.md](WebclientUsage.md) | Calling another service so the correlation id is forwarded |
 
@@ -101,7 +101,7 @@ mvn -pl identity test -Dtest=UserServiceImplTest
 |---|---|---|
 | common-logging | 57 | Unit tests + Spring Boot auto-configuration tests |
 | api-gateway | 23 | Unit tests |
-| identity | 40 | Unit tests (Keycloak and the database are mocked) |
+| identity | 46 | Unit tests (Keycloak and the database are mocked) |
 | product-catalog | 157 | Unit tests, `@WebMvcTest` controller tests, `@DataJpaTest` on a real PostgreSQL (Testcontainers) |
 
 How each test works: [testing guide](testing/README.md).
