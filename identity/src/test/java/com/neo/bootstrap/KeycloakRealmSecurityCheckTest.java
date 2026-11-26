@@ -23,6 +23,7 @@ class KeycloakRealmSecurityCheckTest {
   private static final String COMPOSITES =
       REALM + "/roles/default-roles-dwell/composites/clients/rm-id";
   private static final String ADMIN_CLI = REALM + "/clients?clientId=admin-cli";
+  private static final String LOGIN_CLIENT = REALM + "/clients?clientId=dwell-client";
 
   private final KeycloakProperties props = new KeycloakProperties();
   private final KeycloakAdminServiceImpl admin = mock(KeycloakAdminServiceImpl.class);
@@ -34,12 +35,19 @@ class KeycloakRealmSecurityCheckTest {
   void setUp() {
     props.setUrl("http://kc");
     props.setRealm("Dwell");
+    props.setClientId("dwell-client");
     when(admin.getAccessTokenCache()).thenReturn(Mono.just("t"));
     when(keycloak.getMono(eq(REALM), eq("t"), eq(Map.class), any()))
         .thenReturn(Mono.just(Map.of("defaultRole", Map.of("name", "default-roles-dwell"))));
     when(keycloak.getMono(
             eq(REALM + "/clients?clientId=realm-management"), eq("t"), eq(Map.class), any()))
         .thenReturn(Mono.just(Map.of("id", "rm-id")));
+    loginClientFullScope(false);
+  }
+
+  private void loginClientFullScope(boolean fullScope) {
+    when(keycloak.getFlux(eq(LOGIN_CLIENT), any(), eq(Map.class), any()))
+        .thenReturn(Flux.just(Map.of("fullScopeAllowed", fullScope)));
   }
 
   private void defaultRoleHasAdminRoles(String... names) {
@@ -120,5 +128,31 @@ class KeycloakRealmSecurityCheckTest {
     adminCli(false);
 
     assertThat(check.findProblems().block()).singleElement().asString().contains("manage-users");
+  }
+
+  @Test
+  void fullScopeOnTheLoginClientIsReported() {
+    defaultRoleHasAdminRoles();
+    adminCli(false);
+    loginClientFullScope(true);
+
+    assertThat(check.findProblems().block())
+        .singleElement()
+        .asString()
+        .contains("dwell-client", "full scope");
+  }
+
+  @Test
+  void serviceAccountOnTheLoginClientIsReported() {
+    defaultRoleHasAdminRoles();
+    adminCli(false);
+    props.setServiceClientId("dwell-admin");
+    when(keycloak.getFlux(eq(LOGIN_CLIENT), any(), eq(Map.class), any()))
+        .thenReturn(Flux.just(Map.of("fullScopeAllowed", false, "serviceAccountsEnabled", true)));
+
+    assertThat(check.findProblems().block())
+        .singleElement()
+        .asString()
+        .contains("dwell-client", "service account", "dwell-admin");
   }
 }

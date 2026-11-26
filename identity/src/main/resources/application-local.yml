@@ -4,3 +4,7 @@ app:
   bootstrap:
     enabled: ${BOOTSTRAP_ENABLED:true}
     admin-password: ${BOOTSTRAP_ADMIN_PASSWORD:Admin@12345}
+keycloak:
+  # Local dev realm's admin service client; set real values via env everywhere else
+  service-client-id: ${KEYCLOAK_SERVICE_CLIENT_ID:dwell-admin}
+  service-client-secret: ${KEYCLOAK_SERVICE_CLIENT_SECRET:gvExtrVp0SbQzCQcdRQtA8V86ttBpcgk}

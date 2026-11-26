@@ -66,11 +66,15 @@ public class KeycloakRealmSecurityCheck implements ApplicationRunner {
   }
 
   private Mono<List<String>> findProblems(String token) {
-    return Mono.zip(adminRolesGivenToEveryone(token), passwordLoginOnAdminCli(token))
+    return Mono.zip(
+            adminRolesGivenToEveryone(token),
+            passwordLoginOnAdminCli(token),
+            loginClientProblems(token))
         .map(
             found -> {
               List<String> problems = new ArrayList<>(found.getT1());
               problems.addAll(found.getT2());
+              problems.addAll(found.getT3());
               return problems;
             });
   }
@@ -133,6 +137,41 @@ public class KeycloakRealmSecurityCheck implements ApplicationRunner {
             client ->
                 "the public client admin-cli accepts passwords directly (any user can get a"
                     + " token from it)")
+        .collectList();
+  }
+
+  /**
+   * The login client must have full scope off (a user's tokens would carry every role they have,
+   * admin roles included) and no service account (that was the old admin client).
+   */
+  private Mono<List<String>> loginClientProblems(String token) {
+    String clientId = keycloakProperties.getClientId();
+    return keycloak
+        .getFlux(
+            realmUrl() + "/clients?clientId=" + URLEncoder.encode(clientId, StandardCharsets.UTF_8),
+            token,
+            Map.class,
+            RoleServiceImpl.AUTH_ERROR_FACTORY)
+        .flatMapIterable(
+            client -> {
+              List<String> problems = new ArrayList<>();
+              if (Boolean.TRUE.equals(client.get("fullScopeAllowed"))) {
+                problems.add(
+                    "the login client "
+                        + clientId
+                        + " has full scope (an admin role given to a user by mistake ends up in"
+                        + " their tokens)");
+              }
+              if (Boolean.TRUE.equals(client.get("serviceAccountsEnabled"))) {
+                problems.add(
+                    "the login client "
+                        + clientId
+                        + " still has a service account (turn it off; admin calls use "
+                        + keycloakProperties.getServiceClientId()
+                        + ")");
+              }
+              return problems;
+            })
         .collectList();
   }
 
