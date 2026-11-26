@@ -19,8 +19,14 @@ import reactor.core.publisher.Mono;
 @Slf4j
 public class KeycloakAdminServiceImpl {
 
-  private static final String ACCESS_TOKEN_KEY = "keycloak:admin:access_token";
-  private static final String REFRESH_TOKEN_KEY = "keycloak:admin:refresh_token";
+  // Per client, so switching to another service client never reuses the old client's token
+  private String accessTokenKey() {
+    return "keycloak:admin:" + keycloakProperties.getServiceClientId() + ":access_token";
+  }
+
+  private String refreshTokenKey() {
+    return "keycloak:admin:" + keycloakProperties.getServiceClientId() + ":refresh_token";
+  }
 
   private final KeycloakProperties keycloakProperties;
   private final WebClient webClient;
@@ -38,7 +44,7 @@ public class KeycloakAdminServiceImpl {
   public Mono<String> getAccessTokenCache() {
     return redisTemplate
         .opsForValue()
-        .get(ACCESS_TOKEN_KEY)
+        .get(accessTokenKey())
         .doOnNext(t -> log.debug("Access token served from Redis"))
         .switchIfEmpty(
             tryRefreshTokenCache() // access token expired → try refresh token
@@ -48,7 +54,7 @@ public class KeycloakAdminServiceImpl {
   private Mono<String> tryRefreshTokenCache() {
     return redisTemplate
         .opsForValue()
-        .get(REFRESH_TOKEN_KEY)
+        .get(refreshTokenKey())
         .doOnNext(t -> log.debug("Refresh token found, requesting new access token"))
         .flatMap(this::fetchByRefreshToken) // use refresh token
         .switchIfEmpty(getRealmToken()) // no refresh token → full login
@@ -62,8 +68,8 @@ public class KeycloakAdminServiceImpl {
   private Mono<String> fetchByRefreshToken(String refreshToken) {
     MultiValueMap<String, String> formData = new LinkedMultiValueMap<>();
     formData.add("grant_type", "refresh_token");
-    formData.add("client_id", keycloakProperties.getClientId());
-    formData.add("client_secret", keycloakProperties.getClientSecret());
+    formData.add("client_id", keycloakProperties.getServiceClientId());
+    formData.add("client_secret", keycloakProperties.getServiceClientSecret());
     formData.add("refresh_token", refreshToken);
 
     return webClient
@@ -91,8 +97,8 @@ public class KeycloakAdminServiceImpl {
 
     MultiValueMap<String, String> formData = new LinkedMultiValueMap<>();
     formData.add("grant_type", "client_credentials");
-    formData.add("client_id", keycloakProperties.getClientId());
-    formData.add("client_secret", keycloakProperties.getClientSecret());
+    formData.add("client_id", keycloakProperties.getServiceClientId());
+    formData.add("client_secret", keycloakProperties.getServiceClientSecret());
 
     return webClient
         .post()
@@ -121,8 +127,8 @@ public class KeycloakAdminServiceImpl {
 
     MultiValueMap<String, String> formData = new LinkedMultiValueMap<>();
     formData.add("grant_type", "client_credentials");
-    formData.add("client_id", keycloakProperties.getClientId());
-    formData.add("client_secret", keycloakProperties.getClientSecret());
+    formData.add("client_id", keycloakProperties.getServiceClientId());
+    formData.add("client_secret", keycloakProperties.getServiceClientSecret());
 
     return webClient
         .post()
@@ -158,12 +164,12 @@ public class KeycloakAdminServiceImpl {
     Duration refreshTtl = Duration.ofSeconds(keycloakProperties.getRefreshTokenTtl());
 
     Mono<Boolean> cacheAccess =
-        redisTemplate.opsForValue().set(ACCESS_TOKEN_KEY, accessToken, accessTtl);
+        redisTemplate.opsForValue().set(accessTokenKey(), accessToken, accessTtl);
 
     // Cache refresh token only if present (client_credentials may not return one)
     Mono<Boolean> cacheRefresh =
         (refreshToken != null)
-            ? redisTemplate.opsForValue().set(REFRESH_TOKEN_KEY, refreshToken, refreshTtl)
+            ? redisTemplate.opsForValue().set(refreshTokenKey(), refreshToken, refreshTtl)
             : Mono.just(true);
 
     return Mono.when(cacheAccess, cacheRefresh)
@@ -174,12 +180,12 @@ public class KeycloakAdminServiceImpl {
   public Mono<String> forceRefresh() {
     log.debug("Force refreshing tokens");
     return redisTemplate
-        .delete(ACCESS_TOKEN_KEY) // clear access token only
+        .delete(accessTokenKey()) // clear access token only
         .then(getAccessTokenCache()); // will try refresh token first
   }
 
   public Mono<String> forceFullRefresh() {
     log.warn("Force full re-login, clearing all cached tokens");
-    return redisTemplate.delete(ACCESS_TOKEN_KEY, REFRESH_TOKEN_KEY).then(fetchFreshTokens());
+    return redisTemplate.delete(accessTokenKey(), refreshTokenKey()).then(fetchFreshTokens());
   }
 }

@@ -86,7 +86,7 @@ activate:    Keycloak enabled=true  → app_user.active=true → audit ACTIVATE
 
 ### Keycloak admin token
 
-Admin calls (create, delete or disable users, manage roles) use `dwell-client`'s **service account** (`client_credentials` grant). The token is cached in Redis (`keycloak:admin:access_token`, `keycloak:admin:refresh_token`) and renewed with the refresh token or a fresh login. Calls that get 401 retry once with a new token.
+Admin calls (create, delete or disable users, manage roles) use the **`dwell-admin` service account** (`KEYCLOAK_SERVICE_CLIENT_ID`, `client_credentials` grant), never `dwell-client`. The token is cached in Redis per client (`keycloak:admin:<client>:access_token`, `keycloak:admin:<client>:refresh_token`) and renewed with the refresh token or a fresh login. Calls that get 401 retry once with a new token. Setting up the clients: [Keycloak first-time setup](../keycloak-setup.md).
 
 ### First admin (bootstrap)
 
@@ -127,7 +127,8 @@ The client only gets a general message per status (`Invalid request`, `Authentic
 | Property / env var | Default | Purpose |
 |---|---|---|
 | `KEYCLOAK_URL`, `KEYCLOAK_REALM` | `http://localhost:8080`, `Dwell` | Keycloak |
-| `KEYCLOAK_CLIENT_ID`, `KEYCLOAK_CLIENT_SECRET` | `dwell-client`, (dev secret) | Client for logins and the admin service account |
+| `KEYCLOAK_CLIENT_ID`, `KEYCLOAK_CLIENT_SECRET` | `dwell-client`, (dev secret) | Client for user logins only |
+| `KEYCLOAK_SERVICE_CLIENT_ID`, `KEYCLOAK_SERVICE_CLIENT_SECRET` | none (`local` profile: `dwell-admin`, dev secret) | **Required.** Service client for identity's admin API calls; must differ from `KEYCLOAK_CLIENT_ID`, or identity won't start |
 | `GATEWAY_SECRET` | `dwell-dev-gateway-secret` | Must match the gateway |
 | `GATEWAY_AUTH_ENABLED` | `true` | Turn the gateway-only check off (tests only) |
 | `BOOTSTRAP_ENABLED`, `BOOTSTRAP_ADMIN_USERNAME`, `BOOTSTRAP_ADMIN_EMAIL`, `BOOTSTRAP_ADMIN_PASSWORD` | off | First admin |
@@ -145,7 +146,7 @@ The client only gets a general message per status (`Invalid request`, `Authentic
 | `dto` | Requests and responses; `TokenClaims` reads `sub`, username, email and names from a token |
 | `exception` | `GlobalExceptionHandler`, `AuthException`, `ConflictException` |
 
-## Tests (46)
+## Tests (51)
 
 For how each test works (setup, action and checks), see [testing/identity.md](../testing/identity.md).
 
@@ -185,6 +186,9 @@ Run with `mvn -pl identity test`. All are unit tests: Keycloak is replaced by a 
 - Keycloak unreachable → 503; an unmapped Keycloak 5xx → 503, otherwise 500.
 - A local duplicate → 409.
 
+**`KeycloakPropertiesTest`**: the admin service client.
+- Startup fails without a service client, or if it is the login client.
+
 **`GatewayAuthWebFilterTest`**: gateway-only access.
 - A request with the right secret passes; a missing or wrong secret → 403.
 - Excluded paths pass.
@@ -195,16 +199,26 @@ Run with `mvn -pl identity test`. All are unit tests: Keycloak is replaced by a 
 
 ## Keycloak realm security
 
-Two realm settings would let **any registered user administer the realm** through Keycloak's admin API: list, change and delete users. Both were found in the Dwell realm and fixed (local environment, 2026-11-25).
+These settings stop ordinary users from getting admin power in Keycloak, its admin API being able to list, change and delete users.
 
 | Setting | Must be | Why |
 |---|---|---|
 | Realm default roles (`default-roles-dwell`) | **No** `realm-management` roles (e.g. `manage-users`) | Every user gets the default roles, so an admin role there makes every user an admin of the realm |
 | Dwell realm's `admin-cli` client | **Direct access grants off** | It's a public client: with direct access grants on, anyone can swap a username and password for a token there |
+| `dwell-client` (user logins) | **Full scope off**; scope = `ADMIN`, `CUSTOMER` | Tokens from your login then carry only these roles, even if a user is given an admin role by mistake |
 
-identity's own admin calls are not affected: its service account (`service-account-dwell-client`) has its roles assigned directly.
+**Two clients, two jobs:**
 
-**Startup check.** On every start, identity checks both settings (`KeycloakRealmSecurityCheck`) and logs:
+| Client | Used for | Settings |
+|---|---|---|
+| `dwell-client` | User login, refresh, logout | Full scope off, scope `ADMIN` + `CUSTOMER`; service account off |
+| `dwell-admin` | identity's admin API calls only (`KEYCLOAK_SERVICE_CLIENT_ID` / `_SECRET`) | Service account only (no login flows); roles `manage-users`, `view-users`, `query-users`, `manage-realm`, `view-realm`, `query-clients`, `view-clients` |
+
+Full scope off applies to *every* token a client issues, including its service account's, so identity's admin calls need their own client. There is no fallback: if `KEYCLOAK_SERVICE_CLIENT_ID` / `_SECRET` aren't set, or name the login client, identity fails at startup.
+
+> **A new role your app checks** (e.g. `SELLER`) must also be added to `dwell-client`'s scope (*Clients → dwell-client → Client scopes → dwell-client-dedicated → Scope*). Otherwise it never appears in tokens and users get 403.
+
+**Startup check.** On every start, identity checks these settings, plus that `dwell-client` has no service account left (`KeycloakRealmSecurityCheck`), and logs:
 - `INFO Keycloak realm Dwell security check passed`, or
 - `ERROR Keycloak realm Dwell is insecure: ...`, naming each problem.
 
@@ -213,15 +227,18 @@ It only reads; it never changes Keycloak or stops startup. If Keycloak can't be 
 **How to fix it** (Keycloak admin console, realm Dwell; do it in every environment that logs the ERROR):
 1. *Realm settings → User registration → Default roles*: remove every `realm-management` role.
 2. *Clients → admin-cli → Settings → Capability config*: turn off *Direct access grants*.
-3. *Sessions → Sign out all active sessions*, so tokens already issued with the old roles stop working. Everyone, including identity's cached admin token, gets a new token on the next call.
-4. Restart identity and check that the startup log says `security check passed`.
+3. Create `dwell-admin` as above ([step by step](../keycloak-setup.md#5-create-dwell-admin-identitys-admin-calls)), put its id and secret in `KEYCLOAK_SERVICE_CLIENT_ID` / `KEYCLOAK_SERVICE_CLIENT_SECRET`, and restart identity.
+4. On `dwell-client`: *Client scopes → dwell-client-dedicated → Scope*: turn off *Full scope allowed* and add the realm roles `ADMIN` and `CUSTOMER`. Then turn off *Service accounts roles* in its capability config.
+5. *Sessions → Sign out all active sessions*, so tokens already issued with the old roles stop working. Everyone, including identity's cached admin token, gets a new token on the next call.
+6. Restart identity and check that the startup log says `security check passed`.
 
 **Checking it by hand:**
 - A token for `admin-cli` with a username and password must be refused (`unauthorized_client`).
 - A normal user's token must get **403** from `GET <keycloak>/admin/realms/Dwell/users`.
+- A token from your login must contain only `ADMIN`/`CUSTOMER` in `realm_access` and **no `resource_access.realm-management`**.
 
 ## Known issues
 
-- **identity's service account is `realm-admin`** (full control of the realm), and the `dwell-client` secret's default value is committed in `application.yml`. Reduce the service account to `manage-users`, `view-users`, `query-users` and `manage-realm`, set `KEYCLOAK_CLIENT_SECRET` in every non-local environment, and rotate the secret.
+- **The `dwell-client` secret's default value is committed** in `application.yml`. Once `dwell-admin` is in use and `dwell-client`'s service account is off, that secret no longer gives admin access, but set `KEYCLOAK_CLIENT_SECRET` in every non-local environment and rotate it anyway.
 - **New users have no application role,** so they get 403 on the catalog until an admin assigns `CUSTOMER`. To change this, add `CUSTOMER` to the realm's default roles.
 - **`created_by` can be set by any client** on the public register endpoint.

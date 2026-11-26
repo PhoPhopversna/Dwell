@@ -29,6 +29,9 @@ keycloak:
   realm: ${KEYCLOAK_REALM:Dwell}
   client-id: ${KEYCLOAK_CLIENT_ID:dwell-client}
   client-secret: ${KEYCLOAK_CLIENT_SECRET:1dKFNJe5JGkrx3NcOQo9I1k7WBflDgh3}
+  # Service account for admin API calls (e.g. dwell-admin); required, separate from client-id
+  service-client-id: ${KEYCLOAK_SERVICE_CLIENT_ID:}
+  service-client-secret: ${KEYCLOAK_SERVICE_CLIENT_SECRET:}
   admin-username: ${KEYCLOAK_ADMIN_USERNAME:admin}
   admin-password: ${KEYCLOAK_ADMIN_PASSWORD:admin}
   admin-client-id: admin-cli

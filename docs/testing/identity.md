@@ -1,4 +1,4 @@
-# identity tests (46)
+# identity tests (51)
 
 `mvn -pl identity test`. No Keycloak, database or Redis needed: Keycloak is replaced by a stub `WebClient` or a mocked connector, and the database by mocked repositories. Reactive results are read with `.block()`. See the [testing guide](README.md) for the patterns used. Service behaviour: [identity](../services/identity.md).
 
@@ -74,7 +74,7 @@ Calls the handler methods directly. A helper `assertGeneral` checks the status, 
 | `unmappedKeycloakErrors_5xxIs503_otherwise500` | `WebClientResponseException` 502, then 400 `invalid_client` | 503, then 500; Keycloak's error text not shown |
 | `localDuplicateIs409` | `DataIntegrityViolationException` (unique constraint) | 409; constraint name not shown |
 
-## `KeycloakRealmSecurityCheckTest` (6): startup security check
+## `KeycloakRealmSecurityCheckTest` (8): startup security check
 
 **Setup:** `KeycloakRealmSecurityCheck` with a mocked admin service (token `t`) and a mocked connector. The connector answers the realm (default role `default-roles-dwell`), the `realm-management` client (id `rm-id`), the default role's `realm-management` roles, and the `admin-cli` client.
 
@@ -85,7 +85,19 @@ Calls the handler methods directly. A helper `assertGeneral` checks the status, 
 | `passwordLoginOnAdminCliIsReported` | `admin-cli` public with direct access grants | One problem naming `admin-cli` |
 | `bothProblemsAreReportedTogether` | Both, with two admin roles | Two problems; the first lists both roles |
 | `keycloakDownNeverStopsStartup` | Getting the admin token fails (connection refused) | `run()` doesn't throw: startup goes on, a WARN is logged |
+| `fullScopeOnTheLoginClientIsReported` | `dwell-client` has full scope on | One problem naming `dwell-client` and "full scope" |
+| `serviceAccountOnTheLoginClientIsReported` | `dwell-client` still has a service account | One problem naming `dwell-client`, "service account" and `dwell-admin` |
 | `revokedAdminTokenIsRefreshedOnce` | The cached token gets 401 (e.g. all sessions were ended) | Retries with a fresh token and still finds the problem |
+
+## `KeycloakPropertiesTest` (3): the admin service client is required
+
+**Setup:** `KeycloakProperties` with login client `dwell-client`; each test sets the service client and calls `afterPropertiesSet()` (what Spring runs after binding).
+
+| Test | How it works | Checks |
+|---|---|---|
+| `aSeparateServiceClientIsAccepted` | `dwell-admin` with a secret | No exception |
+| `startupFailsWithoutAServiceClient` | Id and secret missing; blank id; blank secret | `IllegalStateException` naming `KEYCLOAK_SERVICE_CLIENT_ID`: identity doesn't start |
+| `theLoginClientCannotBeTheServiceClient` | Service client id = `dwell-client` | `IllegalStateException`: no running admin calls through the login client |
 
 ## `GatewayAuthWebFilterTest` (5): gateway-only access
 

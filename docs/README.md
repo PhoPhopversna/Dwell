@@ -8,7 +8,7 @@ Start here. This page explains how the system fits together and how to run it. E
 | [identity](services/identity.md) | Register, login, refresh and logout (Keycloak), roles, activating and deactivating users |
 | [product-catalog](services/product-catalog.md) | Categories, attributes, products, variants, images (MinIO), Kafka image events |
 | [common-logging](services/common-logging.md) | Shared JSON logging, correlation id, masking (used by all three services) |
-| [Testing guide](testing/README.md) | How the tests are built, and what each of the 283 tests sets up, does and checks |
+| [Testing guide](testing/README.md) | How the tests are built, and what each of the 285 tests sets up, does and checks |
 | [LOGGING.md](LOGGING.md) | Logging, Loki and Grafana, and the error-handling rules in depth |
 | [WebclientUsage.md](WebclientUsage.md) | Calling another service so the correlation id is forwarded |
 
@@ -45,7 +45,7 @@ all services ──JSON log files──▶ Grafana Alloy ──▶ Loki :3100 �
 | What | Port | Notes |
 |---|---|---|
 | PostgreSQL (services) | 5432 | Databases `gateway`, `identity`, `product-catalog`; user `tixly-ticket` |
-| Keycloak + its Postgres | 8080 (+5438) | Realm `Dwell`, client `dwell-client` |
+| Keycloak + its Postgres | 8080 (+5438) | Realm `Dwell`, clients `dwell-client` (logins) and `dwell-admin` (identity's admin calls) |
 | Redis | 6379 | Rate limits (gateway), Keycloak admin token cache (identity) |
 | Kafka (KRaft) | 9092 | Image events |
 | MinIO | 9000 (console 9001) | Bucket `images` |
@@ -59,6 +59,8 @@ With the files in place:
 cd docker/infra && docker compose up -d            # Keycloak, Postgres, Redis, Kafka, MinIO
 cd docker/observability && docker compose up -d    # Loki, Alloy, Grafana (optional)
 ```
+
+**First time:** set up the realm, both clients and the first admin with [Keycloak first-time setup](keycloak-setup.md), and put the two client secrets in `.env`. identity won't start without them.
 
 ### 2. Services
 
@@ -101,7 +103,7 @@ mvn -pl identity test -Dtest=UserServiceImplTest
 |---|---|---|
 | common-logging | 57 | Unit tests + Spring Boot auto-configuration tests |
 | api-gateway | 23 | Unit tests |
-| identity | 46 | Unit tests (Keycloak and the database are mocked) |
+| identity | 51 | Unit tests (Keycloak and the database are mocked) |
 | product-catalog | 157 | Unit tests, `@WebMvcTest` controller tests, `@DataJpaTest` on a real PostgreSQL (Testcontainers) |
 
 How each test works: [testing guide](testing/README.md).
