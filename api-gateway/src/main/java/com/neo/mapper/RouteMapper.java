@@ -3,7 +3,7 @@ package com.neo.mapper;
 import com.neo.dto.RouteRequest;
 import com.neo.dto.RouteResponse;
 import com.neo.entity.ApiRoute;
-import com.neo.security.RouteRoles;
+import com.neo.security.RoutePermissions;
 import java.util.List;
 import org.mapstruct.Mapper;
 
@@ -14,11 +14,11 @@ public interface RouteMapper {
 
   ApiRoute toRoute(RouteRequest routeRequest);
 
-  default String rolesToColumn(List<String> roles) {
-    return RouteRoles.join(roles);
+  default String permissionsToColumn(List<String> permissions) {
+    return RoutePermissions.join(permissions);
   }
 
-  default List<String> columnToRoles(String roles) {
-    return List.copyOf(RouteRoles.parse(roles));
+  default List<String> columnToPermissions(String permissions) {
+    return List.copyOf(RoutePermissions.parse(permissions));
   }
 }

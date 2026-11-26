@@ -1,8 +1,9 @@
-package com.neo.config;
+package com.neo.common.security.reactive;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.neo.common.security.GatewayAuthProperties;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.Test;

@@ -4,7 +4,7 @@ Handles accounts and sign-in (port **8083**, base path **`/identity`**). Keycloa
 
 - **Stack:** Spring WebFlux, R2DBC (PostgreSQL), WebClient (Keycloak), reactive Redis.
 - **Depends on:** Keycloak realm `Dwell` (client `dwell-client`), PostgreSQL database `identity`, Redis.
-- **Only reachable through the gateway:** `GatewayAuthWebFilter` rejects any request without the gateway's secret header (403).
+- **Two locks on every request** ([common-security](common-security.md)): the gateway's secret header (403 without it) **and** the user's own JWT, checked again here (401 if missing or invalid). `/api/auth/**` (login, register, refresh, logout) and `/actuator/health` need no token. Everything else needs a **permission** (403 otherwise), even if the gateway's route table says otherwise; the permission each endpoint needs is in the tables below. Other actuator endpoints need the realm role `ADMIN`; unknown paths are denied.
 
 ## Endpoints
 
@@ -19,23 +19,25 @@ Paths as the client calls them through the gateway (identity itself serves them 
 | POST | `/identity/api/auth/refresh` | `refresh_token` | Returns new tokens |
 | POST | `/identity/api/auth/logout` | `refresh_token` | Ends the Keycloak session |
 
-### Roles: ADMIN
+### Roles
 
-| Method | Path | What it does |
-|---|---|---|
-| GET | `/identity/api/roles` | List realm roles |
-| POST | `/identity/api/roles` | Create a realm role (`name`, `description`) |
-| DELETE | `/identity/api/roles/{roleName}` | Delete a realm role |
-| GET | `/identity/api/roles/users/{userId}` | A user's realm roles |
-| POST | `/identity/api/roles/users/{userId}/assign` | Give roles (`roleNames: [...]`) |
-| DELETE | `/identity/api/roles/users/{userId}/remove` | Take roles away |
+| Method | Path | Permission | What it does |
+|---|---|---|---|
+| GET | `/identity/api/roles` | `role:read` | List realm roles |
+| POST | `/identity/api/roles` | `role:write` | Create a realm role (`name`, `description`) |
+| DELETE | `/identity/api/roles/{roleName}` | `role:write` | Delete a realm role |
+| GET | `/identity/api/roles/users/{userId}` | `role:read` | A user's realm roles |
+| POST | `/identity/api/roles/users/{userId}/assign` | `user-role:assign` | Give roles (`roleNames: [...]`) |
+| DELETE | `/identity/api/roles/users/{userId}/remove` | `user-role:assign` | Take roles away |
 
-### Users: ADMIN
+`user-role:assign` can give any role, including `ADMIN`, so treat it like admin power: only bundle it into roles you'd trust with that.
 
-| Method | Path | What it does |
-|---|---|---|
-| POST | `/identity/api/users/{userId}/deactivate` | Blocks the user everywhere (see below) |
-| POST | `/identity/api/users/{userId}/activate` | Unblocks the user |
+### Users
+
+| Method | Path | Permission | What it does |
+|---|---|---|---|
+| POST | `/identity/api/users/{userId}/deactivate` | `user:manage` | Blocks the user everywhere (see below) |
+| POST | `/identity/api/users/{userId}/activate` | `user:manage` | Unblocks the user |
 
 `{userId}` is always the **Keycloak user id** (a UUID), which is also `app_user.keycloak_id` and the `sub` claim of the user's tokens.
 
@@ -131,6 +133,7 @@ The client only gets a general message per status (`Invalid request`, `Authentic
 | `KEYCLOAK_SERVICE_CLIENT_ID`, `KEYCLOAK_SERVICE_CLIENT_SECRET` | none (`local` profile: `dwell-admin`, dev secret) | **Required.** Service client for identity's admin API calls; must differ from `KEYCLOAK_CLIENT_ID`, or identity won't start |
 | `GATEWAY_SECRET` | `dwell-dev-gateway-secret` | Must match the gateway |
 | `GATEWAY_AUTH_ENABLED` | `true` | Turn the gateway-only check off (tests only) |
+| `KEYCLOAK_ISSUER` | `http://localhost:8080/realms/Dwell` | Tokens' `iss`; with `KEYCLOAK_URL`/`KEYCLOAK_REALM` for the realm's keys. See [common-security](common-security.md#configuration) |
 | `BOOTSTRAP_ENABLED`, `BOOTSTRAP_ADMIN_USERNAME`, `BOOTSTRAP_ADMIN_EMAIL`, `BOOTSTRAP_ADMIN_PASSWORD` | off | First admin |
 | `webclient.timeout.*` | connect 5s, response 7s | Keycloak calls |
 | `REDIS_HOST`, `REDIS_PORT` | localhost:6379 | Admin token cache |
@@ -142,11 +145,11 @@ The client only gets a general message per status (`Invalid request`, `Authentic
 | `controller` | `AuthController`, `RoleController`, `UserController` |
 | `service.impl` | `KeycloakAuthServiceImpl` (register/login/refresh/logout), `UserServiceImpl` (`app_user` sync, audit), `UserAdminServiceImpl` (activate/deactivate), `RoleServiceImpl`, `KeycloakAdminServiceImpl` (admin token + Redis), `KeycloakGenericConnector` (HTTP calls + Keycloak error mapping) |
 | `bootstrap` | `AdminBootstrap`, `BootstrapProperties`, `KeycloakRealmSecurityCheck` (startup security check) |
-| `config` | `GatewayAuthWebFilter`, `SecurityConfig`, `WebClientConfig`, `DatabaseConfig`, `LoggingConfig` |
+| `config` | `SecurityConfig` (JWT + ADMIN rules; gateway secret and token checks come from [common-security](common-security.md)), `WebClientConfig`, `DatabaseConfig`, `LoggingConfig` |
 | `dto` | Requests and responses; `TokenClaims` reads `sub`, username, email and names from a token |
 | `exception` | `GlobalExceptionHandler`, `AuthException`, `ConflictException` |
 
-## Tests (51)
+## Tests (52)
 
 For how each test works (setup, action and checks), see [testing/identity.md](../testing/identity.md).
 
@@ -186,13 +189,12 @@ Run with `mvn -pl identity test`. All are unit tests: Keycloak is replaced by a 
 - Keycloak unreachable → 503; an unmapped Keycloak 5xx → 503, otherwise 500.
 - A local duplicate → 409.
 
+**`SecurityConfigTest`**: the permission rules, through the real filter chain.
+- No token → 401; a realm role without permissions → 403.
+- `role:read` reads roles but changes nothing; `role:write` creates and deletes roles but can't assign them; `user-role:assign` assigns and removes but can't delete roles (`DELETE /api/roles/users/...` is never treated as deleting a role named `users`); `user:manage` activates and deactivates.
+
 **`KeycloakPropertiesTest`**: the admin service client.
 - Startup fails without a service client, or if it is the login client.
-
-**`GatewayAuthWebFilterTest`**: gateway-only access.
-- A request with the right secret passes; a missing or wrong secret → 403.
-- Excluded paths pass.
-- Startup fails if no secret is configured.
 
 **`SensitiveToStringTest`**: logging an object never prints secrets.
 - `LoginRequest` hides the password; `RegisterRequest` hides the password and email; `TokenResponse` hides the tokens.
@@ -205,18 +207,18 @@ These settings stop ordinary users from getting admin power in Keycloak, its adm
 |---|---|---|
 | Realm default roles (`default-roles-dwell`) | **No** `realm-management` roles (e.g. `manage-users`) | Every user gets the default roles, so an admin role there makes every user an admin of the realm |
 | Dwell realm's `admin-cli` client | **Direct access grants off** | It's a public client: with direct access grants on, anyone can swap a username and password for a token there |
-| `dwell-client` (user logins) | **Full scope off**; scope = `ADMIN`, `CUSTOMER` | Tokens from your login then carry only these roles, even if a user is given an admin role by mistake |
+| `dwell-client` (user logins) | **Full scope off**; scope = `ADMIN`, `CUSTOMER` and the `dwell-api` permissions | Tokens from your login then carry only these roles, even if a user is given an admin role by mistake |
 
 **Two clients, two jobs:**
 
 | Client | Used for | Settings |
 |---|---|---|
-| `dwell-client` | User login, refresh, logout | Full scope off, scope `ADMIN` + `CUSTOMER`; service account off |
+| `dwell-client` | User login, refresh, logout | Full scope off, scope `ADMIN` + `CUSTOMER` + the `dwell-api` permissions; service account off |
 | `dwell-admin` | identity's admin API calls only (`KEYCLOAK_SERVICE_CLIENT_ID` / `_SECRET`) | Service account only (no login flows); roles `manage-users`, `view-users`, `query-users`, `manage-realm`, `view-realm`, `query-clients`, `view-clients` |
 
 Full scope off applies to *every* token a client issues, including its service account's, so identity's admin calls need their own client. There is no fallback: if `KEYCLOAK_SERVICE_CLIENT_ID` / `_SECRET` aren't set, or name the login client, identity fails at startup.
 
-> **A new role your app checks** (e.g. `SELLER`) must also be added to `dwell-client`'s scope (*Clients → dwell-client → Client scopes → dwell-client-dedicated → Scope*). Otherwise it never appears in tokens and users get 403.
+> **A new permission** must also be added to `dwell-client`'s scope (*Clients → dwell-client → Client scopes → dwell-client-dedicated → Scope*), or it never appears in tokens and users get 403. A new realm role that only bundles existing permissions needs nothing more. See [Keycloak setup, step 3](../keycloak-setup.md#3-create-the-permissions-and-the-roles-that-bundle-them).
 
 **Startup check.** On every start, identity checks these settings, plus that `dwell-client` has no service account left (`KeycloakRealmSecurityCheck`), and logs:
 - `INFO Keycloak realm Dwell security check passed`, or

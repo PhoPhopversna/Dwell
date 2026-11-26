@@ -56,7 +56,7 @@ public interface RouteRepository extends R2dbcRepository<ApiRoute, Long> {
             status = :status,
             path_pattern = :pathPattern,
             normalized_path = :normalizedPath,
-            roles = :roles,
+            permissions = :permissions,
             updated_at = :now,
             updated_by = :updatedBy
         WHERE id = :id
@@ -74,7 +74,7 @@ public interface RouteRepository extends R2dbcRepository<ApiRoute, Long> {
       String status,
       String pathPattern,
       String normalizedPath,
-      String roles,
+      String permissions,
       LocalDateTime now,
       String updatedBy);
 }

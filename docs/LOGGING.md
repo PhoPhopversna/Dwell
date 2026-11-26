@@ -254,6 +254,17 @@ docker compose up -d
 
 Start the services with `scripts/dwell.sh`. It writes logs to `<repo>/logs`, the directory Alloy mounts by default; override it with `LOG_DIR` in `.env`.
 
+**Where log files end up.** The default `LOG_DIR` is the relative path `logs`, so it depends on the working directory the service runs in. Only `<repo>/logs` is shipped to Loki:
+
+| How the service runs | Working directory | Log file |
+|---|---|---|
+| `scripts/dwell.sh` | – (sets an absolute `LOG_DIR`) | `<repo>/logs/<service>.log` |
+| `mvn -pl <service> spring-boot:run` | `<repo>` (set in the root `pom.xml`) | `<repo>/logs/<service>.log` |
+| Tests (`mvn test`) that start a Spring context | – (`LOG_DIR` set by Surefire in the root `pom.xml`) | `<module>/target/test-logs/`, deleted by `mvn clean`, never shipped |
+| IDE run configuration | Usually the module folder | `<module>/logs/` unless you set the working directory to the repo root or `LOG_DIR` to `<repo>/logs` |
+
+A `<module>/logs/` folder (e.g. `identity/logs`) is left over from a run like the last row, or from runs before this was set up. It's git-ignored, Alloy never reads it, and it's safe to delete.
+
 ```bash
 scripts/dwell.sh start all                 # build if needed, start identity, product-catalog, api-gateway; wait until up
 scripts/dwell.sh stop all                  # stop all (gateway first)
@@ -293,7 +304,7 @@ See [`.env.example`](../.env.example). The logging ones are:
 | Variable | Default | Meaning |
 |---|---|---|
 | `APP_ENV` | `local` | Environment label and field |
-| `LOG_DIR` | `logs` | Where `<service>.log` is written |
+| `LOG_DIR` | `logs` | Where `<service>.log` is written. A relative path is relative to the process's working directory (see below) |
 | `LOG_LEVEL_ROOT` / `LOG_LEVEL_APP` / `LOG_LEVEL_ACCESS` | `INFO` | `LOG_LEVEL_ACCESS=DEBUG` also logs "Request received" |
 | `LOG_MAX_FILE_SIZE` / `LOG_MAX_HISTORY` / `LOG_TOTAL_SIZE_CAP` | `50MB` / `7` / `1GB` | File rolling |
 | `LOG_CONSOLE_FORMAT` | `com.neo.logging.DwellJsonLogFormatter` | Console format (`logstash` and `ecs` are also JSON). The file format is always Dwell JSON |

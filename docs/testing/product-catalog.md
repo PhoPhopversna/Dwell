@@ -1,4 +1,4 @@
-# product-catalog tests (157)
+# product-catalog tests (164)
 
 `mvn -pl product-catalog test`. **Repository tests need Docker** (Testcontainers PostgreSQL); `ProductCatalogApplicationTests` needs your local PostgreSQL. See the [testing guide](README.md) for the patterns used. Service behaviour: [product-catalog](../services/product-catalog.md).
 
@@ -13,7 +13,7 @@
 
 ## Controllers (`@WebMvcTest`)
 
-Spring starts only the controller, JSON conversion, validation and `GlobalExceptionHandler`; the service is a `@MockitoBean`. Each test sends a real HTTP request with `MockMvc` and checks the status, headers and JSON. "Service never called" (`verifyNoInteractions`) proves validation rejected the request first.
+Spring starts only the controller, JSON conversion, validation and `GlobalExceptionHandler`; the service is a `@MockitoBean`. Security filters are off here (`@AutoConfigureMockMvc(addFilters = false)`); the rules are tested in `SecurityConfigTest` below. Each test sends a real HTTP request with `MockMvc` and checks the status, headers and JSON. "Service never called" (`verifyNoInteractions`) proves validation rejected the request first.
 
 ### `CategoryControllerTest` (9)
 
@@ -269,17 +269,33 @@ Calls the handler methods directly and reads the `CustomApiResponse` message.
 | `springExceptionsKeepTheirStatus_unknownExceptionsAre500WithAGeneralMessage` | 405 exception; `IllegalStateException` with a DB host | 405 `Method not allowed`; 500 without the host |
 | `storageFailureIs5xxWithAGeneralMessage` | MinIO 503 `AppException` | 503, general message |
 
-### `GatewayAuthFilterTest` (5)
+### `SecurityConfigTest` (7)
 
-Servlet version of the gateway-only check. Secret `s3cret`, excluded path `/v3/api-docs/**`. `chain.getRequest()` is null when the request was stopped.
+**Setup:** `@WebMvcTest(CategoryController.class)` with the real `SecurityConfig` and common-security's auto-configuration, so the whole chain runs: gateway secret (`test-secret`) first, then JWT and permission rules. The token is faked with Spring Security's `jwt()` post-processor: realm role `ADMIN` (which must not matter) plus the given `dwell-api` permissions, mapped by the real `KeycloakRoleConverter`.
 
 | Test | How it works | Checks |
 |---|---|---|
-| `allowsRequestWithGatewaySecret` | Correct header | Passed, 200 |
-| `rejectsDirectRequestWithoutHeader` | No header | 403 with a JSON error body; not passed |
-| `rejectsRequestWithWrongSecret` | Wrong header | 403 |
-| `allowsExcludedPathWithoutHeader` | `/v3/api-docs/swagger-config` | Passed (Swagger works directly) |
-| `failsFastWhenSecretMissing` | Blank secret | `IllegalStateException` at creation |
+| `validTokenWithoutTheGatewaySecretIsRejected` | `category:read` token, no secret | 403 |
+| `gatewaySecretWithoutATokenIsRejected` | Secret, no token | 401, JSON `Authentication required` |
+| `categoryReadAllowsReading` | `GET /api/categories/{id}` with `category:read` | 200 |
+| `categoryReadDoesNotAllowChanges` | `DELETE` with `category:read` | 403, JSON `Access denied` |
+| `categoryWriteAllowsChanges` | `DELETE` with `category:write` | 200 |
+| `realmRoleAloneCannotRead` | `GET` with realm role ADMIN, no permissions | 403: roles alone never count |
+| `productPermissionsDoNotOpenCategories` | `DELETE` category with `product:read`, `product:write` | 403 |
+
+### `WebSocketAuthInterceptorTest` (5)
+
+Calls `WebSocketAuthInterceptor.preSend` with STOMP frames built by `StompHeaderAccessor`; the `JwtDecoder` is a mock, the converter is the real one.
+
+| Test | How it works | Checks |
+|---|---|---|
+| `connectWithProductReadSetsTheUser` | CONNECT, `Authorization: Bearer good`, `product:read` | The session user is `alice` |
+| `connectWithoutATokenIsRefused` | CONNECT without the header | `MessageDeliveryException` "Authentication required" |
+| `connectWithAnInvalidTokenIsRefused` | Decoder throws `BadJwtException` | "Authentication failed" |
+| `connectWithoutProductReadIsRefused` | Token with only `category:read` | "Access denied" |
+| `subscribeWithoutAnAuthenticatedSessionIsRefused` | SUBSCRIBE, no user | Refused |
+
+The gateway-secret filter tests moved to common-security: see [GatewayAuthServletFilterTest](common-security.md#gatewayauthservletfiltertest-4-gateway-secret-servlet).
 
 ### `ProductCatalogApplicationTests` (1)
 

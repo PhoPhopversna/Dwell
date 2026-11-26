@@ -38,6 +38,12 @@
             <version>${project.version}</version>
         </dependency>
 
+        <!-- Shared JWT validation (Keycloak) + gateway-only check -->
+        <dependency>
+            <groupId>com.neo</groupId>
+            <artifactId>common-security</artifactId>
+            <version>${project.version}</version>
+        </dependency>
         <!-- JWT validation (Keycloak) -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

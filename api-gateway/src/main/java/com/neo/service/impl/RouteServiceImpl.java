@@ -8,7 +8,7 @@ import com.neo.exception.DataBaseException;
 import com.neo.exception.RouteNotFoundException;
 import com.neo.mapper.RouteMapper;
 import com.neo.repository.RouteRepository;
-import com.neo.security.RouteRoles;
+import com.neo.security.RoutePermissions;
 import com.neo.service.RouteReloadService;
 import com.neo.service.RouteService;
 import java.time.LocalDateTime;
@@ -113,7 +113,7 @@ public class RouteServiceImpl implements RouteService {
             routeRequest.getStatus(),
             routeRequest.getPathPattern(),
             routeRequest.getNormalizedPath(),
-            RouteRoles.join(routeRequest.getRoles()),
+            RoutePermissions.join(routeRequest.getPermissions()),
             LocalDateTime.now(),
             RouteConstant.SYSTEM)
         .switchIfEmpty(

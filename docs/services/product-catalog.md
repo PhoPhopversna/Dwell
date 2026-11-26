@@ -4,7 +4,7 @@ The catalog (port **8084**): categories with their own attribute definitions, pr
 
 - **Stack:** Spring MVC, Spring Data JPA (PostgreSQL, `jsonb`), Spring Kafka, MinIO client, Thumbnailator, STOMP WebSocket.
 - **Depends on:** PostgreSQL database `product-catalog`, MinIO bucket `images`, Kafka.
-- **Only reachable through the gateway:** `GatewayAuthFilter` rejects requests without the gateway's secret (403). Swagger (`/swagger-ui.html`, `/v3/api-docs`) is the exception and can be opened directly.
+- **Two locks on every request** ([common-security](common-security.md)): the gateway's secret header (403 without it) **and** the user's own JWT, checked again here (401 if missing or invalid). Permission-based: reading categories (and their attributes) needs `category:read`, changing them `category:write`; reading products (variants, images) needs `product:read`, changing them `product:write` (403 otherwise). A customer has the two read permissions, an admin all of them. Swagger (`/swagger-ui.html`, `/v3/api-docs`) is the exception and can be opened directly.
 
 ## Data model
 
@@ -122,7 +122,7 @@ delete image/product ─▶ row deleted ─▶ commit ─▶ Kafka: product-imag
 - **Correlation id:** the request's correlation id travels in the Kafka header, so consumer logs share the HTTP request's id.
 
 **WebSocket:**
-- Connect to `/ws` (STOMP) and subscribe to `/topic/products/{productId}`.
+- Connect to `/ws` (STOMP) **with the user's token as a STOMP header on CONNECT**: `Authorization: Bearer <access_token>` (SockJS can't send HTTP headers). The token gets the same checks as HTTP requests and needs `product:read`; otherwise the server answers with a STOMP `ERROR` frame. Then subscribe to `/topic/products/{productId}`.
 - Messages look like `{"imageId": ..., "status": "READY", "thumbnailUrl": ...}`, or status `FAILED` / `DELETED`.
 
 **Image URLs** are plain public links (`<minio.url>/images/<object>`). `MinioBucketInitializer` creates the bucket at startup and allows anonymous read only (`s3:GetObject`).
@@ -150,6 +150,7 @@ Messages about the client's own input are returned as they are (validation field
 | `KAFKA_RETRY_ATTEMPTS`, `KAFKA_RETRY_DELAY_MS`, `KAFKA_RETRY_MULTIPLIER`, `KAFKA_RETRY_MAX_DELAY_MS` | 4, 60000, 5, 1800000 | Retry topics |
 | `app.kafka.partitions`, `app.kafka.replicas` | 3, 1 | Topic creation |
 | `GATEWAY_SECRET`, `GATEWAY_AUTH_ENABLED` | dev secret, `true` | Gateway-only access |
+| `KEYCLOAK_URL`, `KEYCLOAK_REALM`, `KEYCLOAK_ISSUER` | localhost:8080, `Dwell`, `http://localhost:8080/realms/Dwell` | JWT check; see [common-security](common-security.md#configuration) |
 
 ## Code map
 
@@ -160,10 +161,10 @@ Messages about the client's own input are returned as they are (validation field
 | `service.validator` | `ProductAttributeValidator`, `ImageFileValidator` |
 | `service` | `KafkaPublisher` |
 | `cosumer` | `ImageProcessingConsumer` (thumbnails, file cleanup, DLT handler) |
-| `config` | `KafkaRetryConfig`, `KafkaTopicConfig`, `MinioConfig`, `MinioBucketInitializer`, `WebSocketConfig`, `GatewayAuthFilter`, `OpenApiConfig`, `logging/*` (correlation id in Kafka) |
+| `config` | `KafkaRetryConfig`, `KafkaTopicConfig`, `MinioConfig`, `MinioBucketInitializer`, `WebSocketConfig`, `WebSocketAuthInterceptor` (JWT on STOMP CONNECT), `SecurityConfig` (JWT + permission rules), `OpenApiConfig`, `logging/*` (correlation id in Kafka) |
 | `exception` | `GlobalExceptionHandler`, `AppException`, `EntityNotFoundException`, `AttributeValidationException` |
 
-## Tests (157)
+## Tests (164)
 
 For how each test works (setup, action and checks), see [testing/product-catalog.md](../testing/product-catalog.md).
 
@@ -250,5 +251,7 @@ Each controller test checks status codes, the response wrapper and validation.
 ### Other
 
 - **`GlobalExceptionHandlerTest`** (12): own messages are kept; JPA, library and database details are replaced; validation lists fields but never values; bad JSON, wrong parameter type, 413, Spring statuses and 503 storage errors get the right status and a safe message.
-- **`GatewayAuthFilterTest`:** right secret passes; missing or wrong secret → 403; Swagger paths are excluded; startup fails without a secret.
+- **`SecurityConfigTest`:** the real filter chain. A valid token without the gateway secret → 403; the secret without a token → 401 (JSON); `category:read` reads but can't change; `category:write` changes; a realm role without permissions can't read; product permissions don't open categories.
+- **`WebSocketAuthInterceptorTest`:** STOMP CONNECT with `product:read` sets the user; without a token, with an invalid one or without `product:read` it's refused; a SUBSCRIBE from an unauthenticated session is refused.
+- The gateway-secret filter tests moved to [common-security](common-security.md).
 - **`ProductCatalogApplicationTests`:** the Spring context starts.
