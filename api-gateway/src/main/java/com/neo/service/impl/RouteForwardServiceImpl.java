@@ -2,7 +2,7 @@ package com.neo.service.impl;
 
 import com.neo.entity.ApiRoute;
 import com.neo.repository.RouteRepository;
-import com.neo.security.RouteRoles;
+import com.neo.security.RoutePermissions;
 import java.util.Map;
 import org.springframework.cloud.gateway.route.Route;
 import org.springframework.cloud.gateway.route.RouteLocator;
@@ -53,7 +53,9 @@ public class RouteForwardServiceImpl implements RouteLocator {
       booleanSpec = booleanSpec.and().method(apiRoute.getMethod());
     }
     return booleanSpec
-        .metadata(RouteRoles.METADATA_KEY, apiRoute.getRoles() == null ? "" : apiRoute.getRoles())
+        .metadata(
+            RoutePermissions.METADATA_KEY,
+            apiRoute.getPermissions() == null ? "" : apiRoute.getPermissions())
         .uri(apiRoute.getUri());
   }
 }

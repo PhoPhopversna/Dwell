@@ -1,6 +1,6 @@
 # api-gateway
 
-The only entry point for clients (port **8081**). It checks the caller's Keycloak JWT, finds the route for the request, checks the caller's roles against that route, applies rate limits, adds the shared secret, and forwards the request to identity or product-catalog. It also has its own small admin API to manage routes.
+The only entry point for clients (port **8081**). It checks the caller's Keycloak JWT, finds the route for the request, checks the caller's permissions against that route, applies rate limits, adds the shared secret, and forwards the request to identity or product-catalog. The user's `Authorization` header is forwarded too, and each service checks the token again ([common-security](common-security.md)). It also has its own small admin API to manage routes.
 
 - **Stack:** Spring Cloud Gateway (WebFlux), Spring Security OAuth2 resource server, R2DBC (PostgreSQL), reactive Redis.
 - **Depends on:** Keycloak (JWT keys), PostgreSQL database `gateway` (table `routes`), Redis (rate limits).
@@ -10,30 +10,32 @@ The only entry point for clients (port **8081**). It checks the caller's Keycloa
 ```
 request
   │ 1. CorrelationIdWebFilter        reuse or create X-Correlation-ID; access log line at the end
-  │ 2. Spring Security               validate the JWT (signature, expiry, issuer); invalid token → 401
-  │                                  /api/routes/** needs the ADMIN role
+  │ 2. Spring Security               validate the JWT (signature, expiry, issuer, client = dwell-client); invalid token → 401
+  │                                  /api/routes/** needs route:manage
   │ 3. route matching                 routes come from the `routes` table
   │ 4. GatewaySecretHeaderFilter     sets X-Gateway-Secret (overwrites any client value)
-  │ 5. RouteAuthorizationFilter      checks the caller's roles against the route's roles → 401 / 403
+  │ 5. RouteAuthorizationFilter      checks the caller's permissions against the route's → 401 / 403
   │ 6. DownstreamErrorFilter         downstream unreachable → 503, closed early → 502
   │ 7. RateLimitFilter               per-route limit in Redis → 429
   ▼
 identity / product-catalog
 ```
 
-### Route roles (`RouteAuthorizationFilter`)
+### Route permissions (`RouteAuthorizationFilter`)
 
-Each route row has a `roles` column holding comma-separated Keycloak realm roles.
+Each route row has a `permissions` column holding comma-separated permissions (the `dwell-api` client roles in the caller's token; see [common-security](common-security.md#roles-and-permissions)).
 
-| `roles` value | Result |
+| `permissions` value | Result |
 |---|---|
 | `PUBLIC` | Allowed without a token |
-| `ADMIN` or `CUSTOMER,ADMIN` | Caller needs at least one of these roles; no token → 401, wrong role → 403 |
-| empty / null | **Denied (403).** A new route stays closed until someone sets its roles |
+| `product:read` or `role:read,role:write` | Caller needs at least one of these; no token → 401, none of them → 403 |
+| empty / null | **Denied (403).** A new route stays closed until someone sets its permissions |
 
-Paths in `app.security.public-paths` (login, register, refresh, logout, `/health`) are always allowed without a token, whatever the route says, so users can always get a token. Error bodies never say which role was needed; the reason is only logged.
+Realm role names (`ADMIN`, `CUSTOMER`) never satisfy a route: only permissions count. Paths in `app.security.public-paths` (login, register, refresh, logout, `/health`) are always allowed without a token, whatever the route says, so users can always get a token. Error bodies never say which permission was needed; the reason is only logged.
 
-A route with a `method` (e.g. `GET`) is matched before a route with no method for the same path. That's how "GET for customers, everything else for admins" works (two rows).
+A route with a `method` (e.g. `GET`) is matched before a route with no method for the same path. That's how "GET needs `product:read`, everything else `product:write`" works (two rows).
+
+**Older databases:** the column used to be `roles` (realm role names). On startup, `schema.sql` adds `permissions`, converts the default routes (`CUSTOMER,ADMIN` on a catalog `GET` becomes `category:read` / `product:read`, and so on), and drops `roles`. Any other old value is copied unchanged and, being a role name, denies everyone until you update that route.
 
 ### Rate limiting
 
@@ -83,7 +85,7 @@ Content-Type: application/json
   "uri": "http://localhost:8083",
   "path": "/identity/api/users/**",
   "method": "",
-  "roles": ["ADMIN"],
+  "permissions": ["user:manage"],
   "description": "User management",
   "group_code": "DWELL",
   "status": "ACTIVE",
@@ -103,7 +105,6 @@ Content-Type: application/json
 |---|---|---|
 | `KEYCLOAK_URL`, `KEYCLOAK_REALM`, `KEYCLOAK_ISSUER` | `http://localhost:8080`, `Dwell` | Where JWT keys come from; tokens must be from this issuer |
 | `GATEWAY_SECRET` | `dwell-dev-gateway-secret` | Shared secret sent downstream; **must match** identity and product-catalog |
-| `app.security.admin-role` | `ADMIN` | Role needed for `/api/routes` |
 | `app.security.public-paths` | login, register, refresh, logout, `/health` | Always callable without a token |
 | `GATEWAY_CONNECT_TIMEOUT_MS`, `GATEWAY_RESPONSE_TIMEOUT` | 5000, 30s | Downstream timeouts |
 | `spring.r2dbc.*`, `spring.data.redis.*` | localhost | Routes database and Redis |
@@ -113,32 +114,29 @@ Content-Type: application/json
 
 | Package | Main classes |
 |---|---|
-| `security` | `SecurityConfig` (JWT, ADMIN for `/api/routes`), `RouteAuthorizationFilter`, `RouteRoles`, `KeycloakRealmRoleConverter`, `SecurityResponses` (401/403 bodies) |
+| `security` | `SecurityConfig` (JWT, `route:manage` for `/api/routes`), `RouteAuthorizationFilter`, `RoutePermissions`, `SecurityResponses` (401/403 bodies). Token checks and role mapping come from [common-security](common-security.md) |
 | `config` | `GatewaySecretHeaderFilter`, `DownstreamErrorFilter`, `RateLimitFilter`, `RateLimitConfig` (IP key), `LoggingConfig`, `SchedulingConfig` |
 | `service.impl` | `RouteForwardServiceImpl` (builds gateway routes from the table), `RouteServiceImpl` (CRUD), `RouteReloadServiceImpl`, `RateLimitServiceImpl` |
 | `exception` | `GlobalExceptionHandler` (errors from `/api/routes` only), `AppException`, `RouteNotFoundException`, `DataBaseException` |
 | `resources` | `schema.sql` (routes table), `rate_limiter.lua` |
 
-## Tests (23)
+## Tests (22)
 
 For how each test works (setup, action and checks), see [testing/api-gateway.md](../testing/api-gateway.md).
 
 Run with `mvn -pl api-gateway test`. All are unit tests; no database, Redis or Keycloak needed.
 
-**`RouteAuthorizationFilterTest`**: the role rules for proxied requests.
-- A user with a required role is forwarded; without it → 403; with no token → 401.
-- An anonymous token is still 401, even if the route lists an "anonymous" role.
-- A route with no roles is denied.
-- A `PUBLIC` route and a configured public path need no token, even when the route has no roles.
-- Denied responses never reveal the required roles or the route configuration.
+**`RouteAuthorizationFilterTest`**: the permission rules for proxied requests.
+- A user with one of the route's permissions is forwarded; without → 403; with no token → 401.
+- An anonymous token is still 401, even if the route lists an "anonymous" value.
+- A route with no permissions is denied, even for a user with every permission.
+- A realm role name on a route (an old value) never matches: 403.
+- A `PUBLIC` route and a configured public path need no token, even when the route has no permissions.
+- Denied responses never reveal the required permissions or the route configuration.
 
-**`RouteRolesTest`**: parsing the `roles` column.
+**`RoutePermissionsTest`**: parsing the `permissions` column.
 - Values are trimmed and blanks dropped.
 - Joining removes duplicates and gives null for an empty list.
-
-**`KeycloakRealmRoleConverterTest`**: JWT to Spring authorities.
-- `realm_access.roles` become `ROLE_<name>`.
-- A token without that claim has no roles.
 
 **`DownstreamErrorFilterTest`**: answers when a service can't be reached.
 - Connection refused → 503 with the standard JSON body and correlation id.

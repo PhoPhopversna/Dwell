@@ -6,13 +6,17 @@ import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-public final class RouteRoles {
+/**
+ * The {@code permissions} column of a route: comma-separated permissions (any one is enough), or
+ * {@code PUBLIC} (no token needed). Empty = nobody.
+ */
+public final class RoutePermissions {
 
-  public static final String METADATA_KEY = "roles";
+  public static final String METADATA_KEY = "permissions";
 
   public static final String PUBLIC = "PUBLIC";
 
-  private RouteRoles() {}
+  private RoutePermissions() {}
 
   public static Set<String> parse(String column) {
     if (column == null || column.isBlank()) {
@@ -24,12 +28,12 @@ public final class RouteRoles {
         .collect(Collectors.toCollection(LinkedHashSet::new));
   }
 
-  public static String join(Collection<String> roles) {
-    if (roles == null) {
+  public static String join(Collection<String> permissions) {
+    if (permissions == null) {
       return null;
     }
     String joined =
-        roles.stream()
+        permissions.stream()
             .filter(r -> r != null && !r.isBlank())
             .map(String::trim)
             .distinct()

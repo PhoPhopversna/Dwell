@@ -58,9 +58,9 @@ app:
     header-name: X-Gateway-Secret
     secret: ${GATEWAY_SECRET:dwell-dev-gateway-secret}
 
-  # Each route's allowed roles live in routes.roles (comma-separated, or PUBLIC); no roles = denied
+  # Each route's allowed permissions live in routes.permissions (comma-separated, any one is
+  # enough, or PUBLIC); none = denied. /api/routes needs route:manage.
   security:
-    admin-role: ADMIN
     public-paths: # always callable without a token, so users can obtain one
       - /identity/api/auth/login
       - /identity/api/auth/register

@@ -30,6 +30,12 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-web</artifactId>
 		</dependency>
+		<!-- Shared JWT validation (Keycloak) + gateway-only check -->
+		<dependency>
+			<groupId>com.neo</groupId>
+			<artifactId>common-security</artifactId>
+			<version>${project.version}</version>
+		</dependency>
 
 		<!-- Database - PostgreSQL -->
 		<dependency>
@@ -102,6 +108,11 @@
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-test</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.security</groupId>
+			<artifactId>spring-security-test</artifactId>
 			<scope>test</scope>
 		</dependency>
 		<!-- Repository tests run against a real PostgreSQL (jsonb columns) -->
