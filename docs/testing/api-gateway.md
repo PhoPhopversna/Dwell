@@ -1,44 +1,38 @@
-# api-gateway tests (23)
+# api-gateway tests (22)
 
 `mvn -pl api-gateway test`. No database, Redis or Keycloak needed. See the [testing guide](README.md) for the patterns used. Service behaviour: [api-gateway](../services/api-gateway.md).
 
-## `RouteAuthorizationFilterTest` (8)
+## `RouteAuthorizationFilterTest` (9)
 
-**Setup:** `RouteAuthorizationFilter` is configured with admin role `ADMIN` and public path `/identity/api/auth/login`. Each test builds:
+**Setup:** `RouteAuthorizationFilter` is configured with public path `/identity/api/auth/login`. Each test builds:
 - a `MockServerWebExchange` for the request;
-- a gateway `Route` carrying a `roles` value in its metadata (as the real route loader does);
-- optionally a caller: a `JwtAuthenticationToken` whose `realm_access.roles` claim is converted by the real `KeycloakRealmRoleConverter`.
+- a gateway `Route` carrying a `permissions` value in its metadata (as the real route loader does);
+- optionally a caller: a `JwtAuthenticationToken` with realm role `ADMIN` and the given `dwell-api` permissions, converted by the real `KeycloakRoleConverter` (common-security).
 
 The chain lambda records whether the request was **forwarded**.
 
-| Test | Route roles | Caller | Checks |
+| Test | Route permissions | Caller | Checks |
 |---|---|---|---|
-| `userWithRequiredRoleIsForwarded` | `CUSTOMER,ADMIN` | CUSTOMER | Forwarded, no status set |
-| `userWithoutRequiredRoleGets403` | `ADMIN` | CUSTOMER | Not forwarded, 403 |
-| `missingTokenGets401` | `CUSTOMER` | none | Not forwarded, 401 |
+| `userWithOneOfTheRoutesPermissionsIsForwarded` | `category:read,category:write` | `category:read` | Forwarded, no status set |
+| `userWithoutTheRoutesPermissionGets403` | `category:write` | `category:read` | Not forwarded, 403 |
+| `missingTokenGets401` | `category:read` | none | Not forwarded, 401 |
 | `anonymousAuthenticationGets401EvenIfRouteListsAnonymousRole` | `ANONYMOUS` | Spring's anonymous token | 401: the anonymous token never counts as logged in |
-| `routeWithoutRolesIsDenied` | empty | ADMIN | 403: a route with no roles is closed, even for admins |
+| `routeWithoutPermissionsIsDenied` | empty | every permission | 403: a route with no permissions is closed for everyone |
 | `publicRouteNeedsNoToken` | `PUBLIC` | none | Forwarded |
-| `configuredPublicPathNeedsNoTokenEvenWithoutRoles` | empty, path `/identity/api/auth/login` | none | Forwarded: configured public paths always pass |
-| `deniedResponsesNeverRevealRequiredRolesOrRouteConfig` | `ADMIN`, then empty | CUSTOMER | Body is exactly `{"success":false,"message":"Access denied","data":null}`: no role names |
+| `configuredPublicPathNeedsNoTokenEvenWithoutPermissions` | empty, path `/identity/api/auth/login` | none | Forwarded: configured public paths always pass |
+| `deniedResponsesNeverRevealRequiredPermissionsOrRouteConfig` | `category:write`, then empty | `category:read` | Body is exactly `{"success":false,"message":"Access denied","data":null}`: no permission names |
+| `realmRoleNamesNeverSatisfyARoute` | `ADMIN` (an old value) | realm role ADMIN, `category:read` | 403: only permissions count, so old route values fail closed |
 
-## `RouteRolesTest` (2)
+## `RoutePermissionsTest` (2)
 
-Calls the static helpers that read and write the comma-separated `routes.roles` column.
-
-| Test | How it works | Checks |
-|---|---|---|
-| `parseTrimsAndDropsBlanks` | `" ADMIN, ,CUSTOMER "`, `null`, `"  "` | `[ADMIN, CUSTOMER]`, empty, empty |
-| `joinDedupesAndReturnsNullWhenEmpty` | `[ADMIN, " ADMIN ", CUSTOMER]`, blanks, `null` | `"ADMIN,CUSTOMER"`, `null`, `null` (no role = deny) |
-
-## `KeycloakRealmRoleConverterTest` (2)
-
-Builds `Jwt`s with Spring's `Jwt.withTokenValue(...)` builder.
+Calls the static helpers that read and write the comma-separated `routes.permissions` column.
 
 | Test | How it works | Checks |
 |---|---|---|
-| `mapsRealmRolesToRoleAuthorities` | Token with `realm_access.roles = [ADMIN, CUSTOMER]` | Authorities `ROLE_ADMIN`, `ROLE_CUSTOMER` |
-| `noRealmAccessClaimMeansNoAuthorities` | Token without the claim | Empty (no error) |
+| `parseTrimsAndDropsBlanks` | `" product:read, ,product:write "`, `null`, `"  "` | `[product:read, product:write]`, empty, empty |
+| `joinDedupesAndReturnsNullWhenEmpty` | `[product:read, " product:read ", product:write]`, blanks, `null` | `"product:read,product:write"`, `null`, `null` (no permission = deny) |
+
+The role converter tests moved to common-security: see [KeycloakRoleConverterTest](common-security.md#keycloakroleconvertertest-4-token-to-authorities).
 
 ## `DownstreamErrorFilterTest` (3)
 

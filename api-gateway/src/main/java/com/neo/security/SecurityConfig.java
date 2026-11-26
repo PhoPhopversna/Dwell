@@ -1,5 +1,6 @@
 package com.neo.security;
 
+import com.neo.common.security.DwellPermissions;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -7,7 +8,6 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.config.annotation.web.reactive.EnableWebFluxSecurity;
 import org.springframework.security.config.web.server.ServerHttpSecurity;
-import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.ReactiveJwtAuthenticationConverterAdapter;
 import org.springframework.security.web.server.SecurityWebFilterChain;
 import org.springframework.security.web.server.ServerAuthenticationEntryPoint;
@@ -22,7 +22,10 @@ public class SecurityConfig {
 
   @Bean
   public SecurityWebFilterChain securityWebFilterChain(
-      ServerHttpSecurity http, GatewaySecurityProperties properties) {
+      ServerHttpSecurity http,
+      // Shared Keycloak role mapping (common-security); the shared decoder also checks issuer +
+      // client
+      ReactiveJwtAuthenticationConverterAdapter jwtAuthConverter) {
     return http.csrf(ServerHttpSecurity.CsrfSpec::disable)
         .httpBasic(ServerHttpSecurity.HttpBasicSpec::disable)
         .formLogin(ServerHttpSecurity.FormLoginSpec::disable)
@@ -30,19 +33,19 @@ public class SecurityConfig {
         .authorizeExchange(
             auth ->
                 auth.pathMatchers("/api/routes", "/api/routes/**")
-                    .hasRole(properties.adminRole())
+                    .hasAuthority(DwellPermissions.ROUTE_MANAGE)
                     .anyExchange()
                     .permitAll())
         .exceptionHandling(
             ex ->
                 ex.authenticationEntryPoint(authenticationEntryPoint())
-                    .accessDeniedHandler(accessDeniedHandler(properties.adminRole())))
+                    .accessDeniedHandler(accessDeniedHandler()))
         .oauth2ResourceServer(
             oauth2 ->
                 oauth2
-                    .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthConverter()))
+                    .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthConverter))
                     .authenticationEntryPoint(authenticationEntryPoint())
-                    .accessDeniedHandler(accessDeniedHandler(properties.adminRole())))
+                    .accessDeniedHandler(accessDeniedHandler()))
         .build();
   }
 
@@ -65,27 +68,20 @@ public class SecurityConfig {
             });
   }
 
-  private ServerAccessDeniedHandler accessDeniedHandler(String adminRole) {
+  private ServerAccessDeniedHandler accessDeniedHandler() {
     return (exchange, denied) ->
         Mono.defer(
             () -> {
               log.warn(
-                  "Denied {} {}: requires realm role {}",
+                  "Denied {} {}: requires permission {}",
                   exchange.getRequest().getMethod(),
                   exchange.getRequest().getPath(),
-                  adminRole);
+                  DwellPermissions.ROUTE_MANAGE);
               return SecurityResponses.write(
                   exchange,
                   HttpStatus.FORBIDDEN,
                   SecurityResponses.ACCESS_DENIED,
                   "Bearer error=\"insufficient_scope\"");
             });
-  }
-
-  private ReactiveJwtAuthenticationConverterAdapter jwtAuthConverter() {
-    JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
-    converter.setJwtGrantedAuthoritiesConverter(new KeycloakRealmRoleConverter());
-    converter.setPrincipalClaimName("preferred_username");
-    return new ReactiveJwtAuthenticationConverterAdapter(converter);
   }
 }

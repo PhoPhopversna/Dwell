@@ -19,7 +19,10 @@ import org.springframework.util.AntPathMatcher;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
-/** Route roles: PUBLIC = no token needed, none = denied, otherwise 401/403. */
+/**
+ * Route permissions: PUBLIC = no token needed, none = denied, otherwise the user needs one of the
+ * route's permissions (from the token's {@code dwell-api} client roles) or gets 401/403.
+ */
 @Slf4j
 @Component
 public class RouteAuthorizationFilter implements GlobalFilter, Ordered {
@@ -48,16 +51,17 @@ public class RouteAuthorizationFilter implements GlobalFilter, Ordered {
     Set<String> required =
         route == null
             ? Set.of()
-            : RouteRoles.parse(
-                String.valueOf(route.getMetadata().getOrDefault(RouteRoles.METADATA_KEY, "")));
+            : RoutePermissions.parse(
+                String.valueOf(
+                    route.getMetadata().getOrDefault(RoutePermissions.METADATA_KEY, "")));
 
-    if (required.contains(RouteRoles.PUBLIC)) {
+    if (required.contains(RoutePermissions.PUBLIC)) {
       return chain.filter(exchange);
     }
     String method = exchange.getRequest().getMethod().name();
     if (required.isEmpty()) {
       log.warn(
-          "Denied {} {}: route {} has no roles configured",
+          "Denied {} {}: route {} has no permissions configured",
           method,
           path,
           route == null ? "?" : route.getId());
@@ -78,13 +82,13 @@ public class RouteAuthorizationFilter implements GlobalFilter, Ordered {
                 return reject(
                     exchange, HttpStatus.UNAUTHORIZED, SecurityResponses.AUTHENTICATION_REQUIRED);
               }
-              Set<String> userRoles =
+              // Permissions only: realm roles (ROLE_*) can't satisfy a route
+              Set<String> userPermissions =
                   auth.get().getAuthorities().stream()
                       .map(GrantedAuthority::getAuthority)
-                      .filter(a -> a.startsWith("ROLE_"))
-                      .map(a -> a.substring(5))
+                      .filter(a -> !a.startsWith("ROLE_"))
                       .collect(Collectors.toSet());
-              if (required.stream().anyMatch(userRoles::contains)) {
+              if (required.stream().anyMatch(userPermissions::contains)) {
                 return chain.filter(exchange);
               }
               log.warn(
@@ -93,7 +97,7 @@ public class RouteAuthorizationFilter implements GlobalFilter, Ordered {
                   path,
                   auth.get().getName(),
                   required,
-                  userRoles);
+                  userPermissions);
               return reject(exchange, HttpStatus.FORBIDDEN, SecurityResponses.ACCESS_DENIED);
             });
   }

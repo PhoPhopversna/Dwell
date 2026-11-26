@@ -16,8 +16,9 @@ spring:
     oauth2:
       resourceserver:
         jwt:
-          jwk-set-uri: http://localhost:8080/realms/Dwell/protocol/openid-connect/certs
-          issuer-uri: http://localhost:8080/realms/Dwell
+          # Every token is checked here too (common-security): signature, expiry, issuer, client
+          jwk-set-uri: ${KEYCLOAK_URL:http://localhost:8080}/realms/${KEYCLOAK_REALM:Dwell}/protocol/openid-connect/certs
+          issuer-uri: ${KEYCLOAK_ISSUER:http://localhost:8080/realms/Dwell}
   data:
     redis:
       host: ${REDIS_HOST:localhost}

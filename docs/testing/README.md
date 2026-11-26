@@ -5,10 +5,11 @@ This guide explains how the tests are built and how each test works: what it set
 | Module | Tests | Per-test reference |
 |---|---|---|
 | common-logging | 57 | [common-logging.md](common-logging.md) |
-| api-gateway | 23 | [api-gateway.md](api-gateway.md) |
-| identity | 48 | [identity.md](identity.md) |
-| product-catalog | 157 | [product-catalog.md](product-catalog.md) |
-| **Total** | **285** | |
+| common-security | 24 | [common-security.md](common-security.md) |
+| api-gateway | 22 | [api-gateway.md](api-gateway.md) |
+| identity | 52 | [identity.md](identity.md) |
+| product-catalog | 164 | [product-catalog.md](product-catalog.md) |
+| **Total** | **319** | |
 
 ## Running the tests
 
@@ -23,7 +24,7 @@ What has to be running:
 
 | Tests | Needs |
 |---|---|
-| common-logging, api-gateway, identity | Nothing: no database, Keycloak, Redis or Kafka |
+| common-logging, common-security, api-gateway, identity | Nothing: no database, Keycloak, Redis or Kafka |
 | product-catalog repository tests (`*RepositoryTest`) | **Docker.** Testcontainers starts a throwaway `postgres:16-alpine` |
 | product-catalog `ProductCatalogApplicationTests` | **Local PostgreSQL** on 5432 with the `product-catalog` database (it boots the whole app with the real config) |
 
@@ -86,7 +87,7 @@ call.contextWrite(ReactiveSecurityContextHolder.withAuthentication(new JwtAuthen
 
 ### 3. Web filters (WebFlux): `MockServerWebExchange`
 
-**Used for** `CorrelationIdWebFilterTest`, `RouteAuthorizationFilterTest`, `GatewayAuthWebFilterTest`, `DownstreamErrorFilterTest`.
+**Used for** `CorrelationIdWebFilterTest`, `RouteAuthorizationFilterTest`, `GatewayAuthWebFilterTest` (common-security), `DownstreamErrorFilterTest`.
 
 The test builds a fake request and calls the filter directly, passing a small lambda as "the rest of the chain". The lambda records whether the request got through and can write a response, throw, or switch threads like real I/O. The test then reads the response status, headers and body.
 
@@ -100,13 +101,13 @@ assertThat(exchange.getResponse().getStatusCode()).isEqualTo(HttpStatus.FORBIDDE
 
 ### 4. Servlet filters: `MockHttpServletRequest` / `MockFilterChain`
 
-**Used for** `CorrelationIdServletFilterTest` and `GatewayAuthFilterTest` (product-catalog). The same idea with the servlet mocks: `chain.getRequest()` is null if the filter stopped the request.
+**Used for** `CorrelationIdServletFilterTest` and `GatewayAuthServletFilterTest` (common-security). The same idea with the servlet mocks: `chain.getRequest()` is null if the filter stopped the request.
 
 ### 5. Controller slice: `@WebMvcTest` + `MockMvc`
 
 **Used for** the product-catalog `*ControllerTest` classes.
 
-Spring starts only the web layer: one controller, JSON conversion, validation and the `GlobalExceptionHandler`. The service is a `@MockitoBean`. The test sends a real HTTP request and checks the status, headers and JSON (`jsonPath`). This proves request parsing, `@Valid` rules, status codes and the response wrapper, without any business logic or database.
+Spring starts only the web layer: one controller, JSON conversion, validation and the `GlobalExceptionHandler`. The service is a `@MockitoBean`. These tests run with `@AutoConfigureMockMvc(addFilters = false)` (no security filters), because they test controller logic; the security rules have their own test, `SecurityConfigTest`, which runs the real filter chain and fakes the user's token with Spring Security's `jwt()` request post-processor. The test sends a real HTTP request and checks the status, headers and JSON (`jsonPath`). This proves request parsing, `@Valid` rules, status codes and the response wrapper, without any business logic or database.
 
 ```java
 mvc.perform(post(base).contentType(APPLICATION_JSON).content("{\"sku\":\"\",\"price\":-1}"))
@@ -164,7 +165,7 @@ The retry-topic flow itself (`KafkaRetryConfig`) was checked against a real brok
 - **Test names are sentences** that state the rule: `failedLocalSaveDeletesTheKeycloakUser`, `routeWithoutRolesIsDenied`. If one fails, the name tells you which rule broke.
 - **One rule per test.** Related variants of the same rule share a test, e.g. three kinds of bad file in `nonImageOrEmptyFileIsRejectedBeforeAnythingIsStored`.
 - **Always check what must *not* happen,** not just the result: nothing saved, nothing published, MinIO not called, secret not in the message.
-- **Security and privacy rules are tested explicitly:** error bodies never reveal roles, Keycloak details, SQL or class names, and logs never contain passwords or tokens.
+- **Security and privacy rules are tested explicitly:** error bodies never reveal roles or permissions, Keycloak details, SQL or class names, and logs never contain passwords or tokens.
 - **Regression tests for fixed bugs** say so in their doc: `missingRouteIs404_notADatabaseError`, `emptyBody4xxIsAnError`.
 - Format with `mvn -pl <module> spotless:apply`.
 

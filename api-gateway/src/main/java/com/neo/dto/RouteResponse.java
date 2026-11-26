@@ -17,8 +17,10 @@ public class RouteResponse {
   @JsonProperty("rate_limit_duration")
   public Integer rateLimitDuration;
 
-  /** Realm roles allowed to call this route; ["PUBLIC"] means no token needed. */
-  public List<String> roles;
+  /**
+   * Permissions allowed to call this route (any one is enough); ["PUBLIC"] means no token needed.
+   */
+  public List<String> permissions;
 
   public String status;
 

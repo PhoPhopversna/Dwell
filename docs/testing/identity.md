@@ -1,4 +1,4 @@
-# identity tests (51)
+# identity tests (52)
 
 `mvn -pl identity test`. No Keycloak, database or Redis needed: Keycloak is replaced by a stub `WebClient` or a mocked connector, and the database by mocked repositories. Reactive results are read with `.block()`. See the [testing guide](README.md) for the patterns used. Service behaviour: [identity](../services/identity.md).
 
@@ -99,17 +99,20 @@ Calls the handler methods directly. A helper `assertGeneral` checks the status, 
 | `startupFailsWithoutAServiceClient` | Id and secret missing; blank id; blank secret | `IllegalStateException` naming `KEYCLOAK_SERVICE_CLIENT_ID`: identity doesn't start |
 | `theLoginClientCannotBeTheServiceClient` | Service client id = `dwell-client` | `IllegalStateException`: no running admin calls through the login client |
 
-## `GatewayAuthWebFilterTest` (5): gateway-only access
+## `SecurityConfigTest` (6): permission rules
 
-**Setup:** `GatewayAuthWebFilter` with header `X-Gateway-Secret`, secret `s3cret`, excluded path `/actuator/health`. The chain lambda records whether the request **passed**.
+**Setup:** `@WebFluxTest` with `RoleController` and `UserController`, the real `SecurityConfig` and common-security's auto-configuration (gateway secret off for this test). The services are mocks that return empty results. The token is faked with `mockJwt()`: realm role `ADMIN` (which must not matter) plus the given `dwell-api` permissions, mapped by the real `KeycloakRoleConverter`. Paths are without the `/identity` base path.
 
 | Test | How it works | Checks |
 |---|---|---|
-| `allowsRequestWithGatewaySecret` | Correct header | Passed |
-| `rejectsDirectRequestWithoutHeader` | No header (someone calling identity directly to self-assign roles) | 403, not passed |
-| `rejectsWrongSecret` | Header `guess` | 403 |
-| `allowsExcludedPath` | `/actuator/health` without header | Passed |
-| `failsFastWithoutSecret` | Filter created with an empty secret | `IllegalStateException`: the service refuses to start unprotected |
+| `noTokenIs401` | `GET /api/roles`, no token | 401 |
+| `realmRoleAloneIsNotEnough` | Realm role ADMIN, no permissions | 403 |
+| `roleReadListsRolesAndAUsersRolesButChangesNothing` | `role:read`: list roles, a user's roles, create a role, assign | 200, 200, 403, 403 |
+| `roleWriteCreatesAndDeletesRolesButCannotAssignThem` | `role:write`: create, delete, assign | 201, 204, 403 |
+| `userRoleAssignAssignsAndRemovesButCannotChangeTheRealmsRoles` | `user-role:assign`: assign, remove; `role:write` on remove; `user-role:assign` on delete role | 200, 204, 403 (the `/users/...` path isn't a role called `users`), 403 |
+| `userManageActivatesAndDeactivates` | `user:manage` vs `role:write` + `user-role:assign` on deactivate | 200 vs 403 |
+
+The gateway-secret filter tests moved to common-security: see [GatewayAuthWebFilterTest](common-security.md#gatewayauthwebfiltertest-5-gateway-secret-webflux).
 
 ## `SensitiveToStringTest` (3): DTOs never print secrets
 
