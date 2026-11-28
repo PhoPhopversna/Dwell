@@ -46,6 +46,16 @@ app:
     secret: ${GATEWAY_SECRET:dwell-dev-gateway-secret}
     excluded-paths: [] # e.g. /actuator/health
 
+  keycloak:
+    # identity creates missing permissions (DwellPermissions) in Keycloak at startup
+    permission-sync:
+      enabled: ${KEYCLOAK_PERMISSION_SYNC:true}
+      # Which realm roles get a permission when identity first creates it ("*" = every new one).
+      # Only at creation: an admin can untick it later in the matrix and it stays unticked.
+      initial-grants:
+        ADMIN: ["*"]
+        CUSTOMER: [category:read, product:read]
+
   # Realm roles every self-registered user gets
   registration:
     default-roles: [CUSTOMER]

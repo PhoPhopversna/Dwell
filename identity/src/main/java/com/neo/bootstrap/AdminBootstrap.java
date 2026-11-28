@@ -28,6 +28,8 @@ import reactor.util.retry.Retry;
 /** Idempotent; failures are logged and never stop startup. */
 @Slf4j
 @Component
+// Before KeycloakPermissionSync (order 100), which gives new permissions to the roles made here
+@org.springframework.core.annotation.Order(10)
 @RequiredArgsConstructor
 @EnableConfigurationProperties(BootstrapProperties.class)
 @ConditionalOnProperty(prefix = "app.bootstrap", name = "enabled", havingValue = "true")
