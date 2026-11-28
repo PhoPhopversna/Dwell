@@ -73,6 +73,51 @@ public class KeycloakProperties implements InitializingBean {
     return url + "/admin/realms/" + realm + "/roles/" + roleName;
   }
 
+  /** Lookup of a client by its clientId (answers a list with 0 or 1 entries). */
+  public String getClientByClientIdEndpoint(String clientId) {
+    return url
+        + "/admin/realms/"
+        + realm
+        + "/clients?clientId="
+        + java.net.URLEncoder.encode(clientId, java.nio.charset.StandardCharsets.UTF_8);
+  }
+
+  /** A client's roles (for the permission client: the permissions). */
+  public String getClientRolesEndpoint(String clientUuid) {
+    return url + "/admin/realms/" + realm + "/clients/" + clientUuid + "/roles";
+  }
+
+  /** One role of a client. */
+  public String getClientRoleEndpoint(String clientUuid, String roleName) {
+    return getClientRolesEndpoint(clientUuid) + "/" + roleName;
+  }
+
+  /** The roles a client role bundles (add with POST and a role list). */
+  public String getClientRoleCompositesEndpoint(String clientUuid, String roleName) {
+    return getClientRoleEndpoint(clientUuid, roleName) + "/composites";
+  }
+
+  /** Roles of client {@code roleClientUuid} in client {@code clientUuid}'s token scope. */
+  public String getClientScopeMappingsEndpoint(String clientUuid, String roleClientUuid) {
+    return url
+        + "/admin/realms/"
+        + realm
+        + "/clients/"
+        + clientUuid
+        + "/scope-mappings/clients/"
+        + roleClientUuid;
+  }
+
+  /** The roles a realm role bundles (add with POST, remove with DELETE, both with a role list). */
+  public String getRoleCompositesEndpoint(String roleName) {
+    return url + "/admin/realms/" + realm + "/roles/" + roleName + "/composites";
+  }
+
+  /** The roles of one client that a realm role bundles directly. */
+  public String getRoleClientCompositesEndpoint(String roleName, String clientUuid) {
+    return getRoleCompositesEndpoint(roleName) + "/clients/" + clientUuid;
+  }
+
   public String getUsersEndpoint() {
     return url + "/admin/realms/" + realm + "/users";
   }

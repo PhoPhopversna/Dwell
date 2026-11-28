@@ -119,6 +119,27 @@ public class KeycloakGenericConnector {
         .then();
   }
 
+  /** DELETE with a JSON body (Keycloak removes role mappings and composites this way). */
+  public Mono<Void> deleteWithBody(
+      String url,
+      Object body,
+      String token,
+      BiFunction<String, HttpStatus, RuntimeException> errorFactory) {
+
+    WebClient.ResponseSpec spec =
+        webClient
+            .method(org.springframework.http.HttpMethod.DELETE)
+            .uri(url)
+            .contentType(MediaType.APPLICATION_JSON)
+            .headers(h -> setBearerAuth(h, token))
+            .bodyValue(body)
+            .retrieve();
+
+    return applyErrorHandling(
+            applyStatusHandlers(spec, url, errorFactory).bodyToFlux(Void.class), url, errorFactory)
+        .then();
+  }
+
   private <T> Flux<T> applyErrorHandling(
       Flux<T> flux, String url, BiFunction<String, HttpStatus, RuntimeException> errorFactory) {
 
