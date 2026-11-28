@@ -11,5 +11,12 @@ public interface KeycloakAuthService {
 
   public Mono<Void> logout(String refreshToken);
 
+  /** Self-registration: the user gets the configured {@code app.registration.default-roles}. */
   public Mono<Void> register(RegisterRequest request);
+
+  /**
+   * Registers a user with exactly these realm roles instead of the registration defaults (e.g. the
+   * bootstrap admin). Never fed from a request body: callers decide the roles in code.
+   */
+  public Mono<Void> register(RegisterRequest request, java.util.List<String> roles);
 }

@@ -46,6 +46,10 @@ app:
     secret: ${GATEWAY_SECRET:dwell-dev-gateway-secret}
     excluded-paths: [] # e.g. /actuator/health
 
+  # Realm roles every self-registered user gets
+  registration:
+    default-roles: [CUSTOMER]
+
   # Creates the first ADMIN at startup (idempotent); off by default, on with the local profile
   bootstrap:
     enabled: ${BOOTSTRAP_ENABLED:false}

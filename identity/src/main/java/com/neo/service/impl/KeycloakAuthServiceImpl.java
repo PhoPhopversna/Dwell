@@ -1,6 +1,7 @@
 package com.neo.service.impl;
 
 import com.neo.config.KeycloakProperties;
+import com.neo.config.RegistrationProperties;
 import com.neo.dto.AppUserRequest;
 import com.neo.dto.RegisterRequest;
 import com.neo.dto.TokenClaims;
@@ -9,8 +10,10 @@ import com.neo.dto.UserAuditRequest;
 import com.neo.exception.AuthException;
 import com.neo.exception.ConflictException;
 import com.neo.service.KeycloakAuthService;
+import com.neo.service.RoleService;
 import com.neo.service.UserService;
 import java.net.URI;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.BiFunction;
@@ -36,6 +39,8 @@ public class KeycloakAuthServiceImpl implements KeycloakAuthService {
   private final KeycloakAdminServiceImpl keycloakAdminService;
 
   private final UserService userService;
+  private final RoleService roleService;
+  private final RegistrationProperties registrationProperties;
 
   private static final String CORRELATION_ID_MDC_KEY = "correlationId";
 
@@ -47,12 +52,16 @@ public class KeycloakAuthServiceImpl implements KeycloakAuthService {
       WebClient webClient,
       KeycloakGenericConnector keycloakGenericConnector,
       KeycloakAdminServiceImpl keycloakAdminService,
-      UserService userService) {
+      UserService userService,
+      RoleService roleService,
+      RegistrationProperties registrationProperties) {
     this.keycloakProperties = keycloakProperties;
     this.webClient = webClient;
     this.keycloakGenericConnector = keycloakGenericConnector;
     this.keycloakAdminService = keycloakAdminService;
     this.userService = userService;
+    this.roleService = roleService;
+    this.registrationProperties = registrationProperties;
   }
 
   @Override
@@ -182,6 +191,11 @@ public class KeycloakAuthServiceImpl implements KeycloakAuthService {
 
   @Override
   public Mono<Void> register(RegisterRequest request) {
+    return register(request, registrationProperties.getDefaultRoles());
+  }
+
+  @Override
+  public Mono<Void> register(RegisterRequest request, List<String> roles) {
     final boolean ENABLE = true;
     log.debug("Registering user {}", request.getUserName());
 
@@ -251,8 +265,14 @@ public class KeycloakAuthServiceImpl implements KeycloakAuthService {
                                     ? request.getCreatedBy()
                                     : "SELF_REGISTER")
                             .build();
-                    return userService
-                        .saveUser(appUserRequest, "REGISTER", correlationId)
+                    // Roles first, then the local row; if either fails, the Keycloak user is
+                    // deleted again, so nobody ends up registered without a role.
+                    return assignRegistrationRoles(keycloakId, roles)
+                        .then(
+                            Mono.defer(
+                                () ->
+                                    userService.saveUser(
+                                        appUserRequest, "REGISTER", correlationId)))
                         .onErrorResume(
                             e ->
                                 rollbackKeycloakUser(
@@ -262,7 +282,29 @@ public class KeycloakAuthServiceImpl implements KeycloakAuthService {
         });
   }
 
-  /** Deletes the Keycloak user whose local row could not be saved; 404 means already gone. */
+  private Mono<Void> assignRegistrationRoles(String keycloakId, List<String> roles) {
+    if (roles == null || roles.isEmpty()) {
+      return Mono.empty();
+    }
+    return roleService
+        .assignRolesToUser(keycloakId, roles)
+        .doOnSuccess(v -> log.info("Gave new user {} the roles {}", keycloakId, roles))
+        .onErrorMap(
+            e -> {
+              log.error(
+                  "Could not give new user {} the registration roles {}: {}",
+                  keycloakId,
+                  roles,
+                  e.getMessage());
+              return new AuthException(
+                  "Registration is temporarily unavailable", HttpStatus.SERVICE_UNAVAILABLE);
+            });
+  }
+
+  /**
+   * Deletes a Keycloak user whose registration couldn't be finished (default roles or the local row
+   * failed); 404 means already gone.
+   */
   private Mono<Void> rollbackKeycloakUser(
       String keycloakId, String username, String correlationId) {
     String url = keycloakProperties.getUserByIdEndpoint(keycloakId);
@@ -286,7 +328,7 @@ public class KeycloakAuthServiceImpl implements KeycloakAuthService {
             Mono.defer(
                 () -> {
                   log.warn(
-                      "Rolled back Keycloak user {} ({}) after the local save failed",
+                      "Rolled back Keycloak user {} ({}): registration couldn't be finished",
                       keycloakId,
                       username);
                   return userService.saveUserAuditLog(
