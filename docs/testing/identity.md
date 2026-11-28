@@ -1,11 +1,11 @@
-# identity tests (52)
+# identity tests (73)
 
 `mvn -pl identity test`. No Keycloak, database or Redis needed: Keycloak is replaced by a stub `WebClient` or a mocked connector, and the database by mocked repositories. Reactive results are read with `.block()`. See the [testing guide](README.md) for the patterns used. Service behaviour: [identity](../services/identity.md).
 
-## `KeycloakAuthServiceImplTest` (6): register and login flows
+## `KeycloakAuthServiceImplTest` (10): register and login flows
 
 **Setup:**
-- `KeycloakAuthServiceImpl` gets a mocked `KeycloakGenericConnector`, a mocked `KeycloakAdminServiceImpl` (admin token `admin-token`) and a mocked `UserService`.
+- `KeycloakAuthServiceImpl` gets a mocked `KeycloakGenericConnector`, a mocked `KeycloakAdminServiceImpl` (admin token `admin-token`), a mocked `UserService`, a mocked `RoleService` (role assignment succeeds unless a test says otherwise) and real `RegistrationProperties` (default roles `[CUSTOMER]`).
 - Its `WebClient` is a stub that answers every request as Keycloak's "create user" does: **201 with `Location: .../users/kc-new`**.
 - Login tests use real-looking tokens: a JWT built in the test with `sub = kc-1`.
 
@@ -14,6 +14,10 @@
 | `localDuplicateIsRejectedBeforeKeycloakIsCalled` | `ensureAvailable` fails with 409 | `ConflictException`; the admin token is never even fetched (Keycloak untouched) |
 | `failedLocalSaveDeletesTheKeycloakUser` | Keycloak creates `kc-new`, then `saveUser` fails ("db down") | The same "db down" error is returned; `DELETE .../users/kc-new` is called; audit `REGISTER_ROLLBACK` |
 | `failedRollbackIsAuditedAndTheOriginalErrorIsKept` | Same, but the delete also fails (503) | Still the original "db down" error; audit `REGISTER_ROLLBACK_FAILED` |
+| `selfRegisteredUserGetsCustomerBeforeTheLocalRowIsSaved` | Successful registration | `assignRolesToUser("kc-new", [CUSTOMER])` is called **before** `saveUser` (`InOrder`); no rollback |
+| `failedRoleAssignmentDeletesTheKeycloakUserAndGives503` | `assignRolesToUser` fails with "Role not found: CUSTOMER" (404) | `AuthException` 503 `Registration is temporarily unavailable` (the role name isn't revealed); `DELETE .../users/kc-new` is called; `saveUser` never called |
+| `configuredRolesAreUsedAndAnEmptyListAssignsNone` | Default roles `[CUSTOMER, NEWSLETTER]`, then `[]` | Both roles assigned the first time; no assignment the second time |
+| `explicitRolesReplaceTheRegistrationDefaults` | `register(request, [ADMIN])` (the bootstrap admin) | Only `ADMIN` is assigned, not the registration default `CUSTOMER` |
 | `loginReturnsTokensOnceTheLocalUserIsInSync` | Keycloak returns tokens; `syncAuthenticatedUser` succeeds for `sub = kc-1` | The same tokens are returned |
 | `refusedLoginRevokesTheKeycloakSession` | Tokens issued, but `syncAuthenticatedUser` fails with 403 (inactive) | 403 returned **and** the Keycloak logout endpoint is called, so no session is left |
 | `wrongPasswordIsAuditedWithoutTouchingAppUser` | Keycloak answers 401 | 401 returned; a failed `LOGIN` audit is written; `syncAuthenticatedUser` is never called |
@@ -99,7 +103,7 @@ Calls the handler methods directly. A helper `assertGeneral` checks the status, 
 | `startupFailsWithoutAServiceClient` | Id and secret missing; blank id; blank secret | `IllegalStateException` naming `KEYCLOAK_SERVICE_CLIENT_ID`: identity doesn't start |
 | `theLoginClientCannotBeTheServiceClient` | Service client id = `dwell-client` | `IllegalStateException`: no running admin calls through the login client |
 
-## `SecurityConfigTest` (6): permission rules
+## `SecurityConfigTest` (7): permission rules
 
 **Setup:** `@WebFluxTest` with `RoleController` and `UserController`, the real `SecurityConfig` and common-security's auto-configuration (gateway secret off for this test). The services are mocks that return empty results. The token is faked with `mockJwt()`: realm role `ADMIN` (which must not matter) plus the given `dwell-api` permissions, mapped by the real `KeycloakRoleConverter`. Paths are without the `/identity` base path.
 
@@ -111,6 +115,37 @@ Calls the handler methods directly. A helper `assertGeneral` checks the status, 
 | `roleWriteCreatesAndDeletesRolesButCannotAssignThem` | `role:write`: create, delete, assign | 201, 204, 403 |
 | `userRoleAssignAssignsAndRemovesButCannotChangeTheRealmsRoles` | `user-role:assign`: assign, remove; `role:write` on remove; `user-role:assign` on delete role | 200, 204, 403 (the `/users/...` path isn't a role called `users`), 403 |
 | `userManageActivatesAndDeactivates` | `user:manage` vs `role:write` + `user-role:assign` on deactivate | 200 vs 403 |
+| `roleReadSeesPermissionsAndTheMatrixButCannotTickThem` | `role:read` on the list, matrix and a role's ticks; `PUT` ticks with `role:read`, `role:write`, `user-role:assign` | 200, 200, 200; 403, 200, 403 |
+
+## `RolePermissionServiceImplTest` (7): ticking permissions on roles
+
+**Setup:** `RolePermissionServiceImpl` with a mocked admin service (token `t`), a mocked `KeycloakGenericConnector` and `UserService`. The connector answers the permission client `dwell-api` (id `api`) with four permissions (`category:read`, `product:read`, `product:write`, `role:write`), each with id `id-<name>`; a test's roles and their current ticks are stubbed per test. The caller (for the lockout guard and the audit) is put in the Reactor security context.
+
+| Test | How it works | Checks |
+|---|---|---|
+| `tickingAddsWhatsMissingAndRemovesTheRest` | Role `backend` has `category:read`, `product:read`; set to `product:read`, `product:write` | Result is the new list; one `POST .../roles/backend/composites`; one `DELETE` with exactly `{id-category:read, category:read}`; audit `ROLE_PERMISSIONS` "by alice: added [product:write], removed [category:read]" |
+| `theSameTicksChangeNothing` | Set to the current ticks | No Keycloak write at all |
+| `anUnknownPermissionIsRejectedAndNothingChanges` | `product:fly` | 400 naming it; no write |
+| `anUnknownRoleIs404` | Keycloak answers 404 for the role | `Role not found: ghost` |
+| `youCannotRemoveRoleWriteFromARoleYouHave` | Caller has role `backend`, unticks `role:write` from it; then a caller with `ADMIN` does the same | 409 and nothing sent (the Keycloak calls are only built after the guard); then the delete happens |
+| `theMatrixShowsEveryBusinessRoleAndEveryPermission` | Realm roles incl. `offline_access`, `uma_authorization`, `default-roles-dwell` | Columns are the 4 permissions; rows only `ADMIN` and `backend`, each with its ticks |
+| `theScopeHolderIsNeverListedOrTickable` | Keycloak also has the holder `permission-scope` | Not in the permission list; ticking it → 400 "Unknown permissions" |
+
+## `KeycloakPermissionSyncTest` (9): creating permissions at startup
+
+**Setup:** a small in-memory Keycloak behind a mocked connector: the `dwell-api` roles, what the holder `permission-scope` bundles, what realm roles `ADMIN`/`CUSTOMER` bundle and `dwell-client`'s scope. Every write (create a role, add to the holder, grant to a role) changes that state and is recorded, so each test checks exactly what the sync did. Initial grants: `ADMIN: [*]`, `CUSTOMER: [category:read, product:read]`.
+
+| Test | How it works | Checks |
+|---|---|---|
+| `aNewKeycloakGetsEveryPermissionTheHolderAndTheInitialGrants` | Empty `dwell-api`; holder in scope | Holder + all 9 created; holder bundles all 9; `ADMIN` all 9, `CUSTOMER` the 2 reads; no problems |
+| `aKeycloakInSyncIsNotWrittenTo` | Everything present | No write at all |
+| `aNewPermissionInTheCodeIsCreatedAndOnlyItIsGranted` | `route:manage` missing; `ADMIN` had `user:manage` unticked | Exactly: create `route:manage`, add to holder, grant to `ADMIN`; `user:manage` stays unticked; `CUSTOMER` gets nothing |
+| `aPermissionCreatedByHandReachesTokensButIsGrantedToNobody` | Extra `report:export` made in the console | Added to the holder only; nobody granted |
+| `theHolderMissingFromTheLoginClientsScopeIsReported` | Scope empty | One problem naming `permission-scope`, `dwell-client` and step 4.4 |
+| `anOlderSetupWithEveryPermissionDirectlyInScopeIsFine` | All 9 directly in scope, no holder there | No problem |
+| `switchedOffItOnlyReports` | `enabled = false`, `route:manage` missing | No write; the missing permission is reported |
+| `aMissingRoleForTheInitialGrantsIsReportedAndTheRestGoesOn` | Realm role `CUSTOMER` doesn't exist | `ADMIN` still gets all 9; one problem naming `CUSTOMER` |
+| `keycloakRefusingGivesAClearHint` | Keycloak answers 403 | Error says identity's admin client needs `manage` on `dwell-api` (step 5.6) |
 
 The gateway-secret filter tests moved to common-security: see [GatewayAuthWebFilterTest](common-security.md#gatewayauthwebfiltertest-5-gateway-secret-webflux).
 

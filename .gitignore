@@ -41,12 +41,11 @@ postman/
 logs/
 **/logs/
 
-### Service docker files  ###
-docker/
+### Local data folders of the docker stacks ###
+docker/**/minio-data/
 
 ### Local env files ###
 .env
 
 ### scripts/dwell.sh pid files ###
 .run/
-scripts/

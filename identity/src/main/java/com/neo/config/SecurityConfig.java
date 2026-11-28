@@ -44,7 +44,10 @@ public class SecurityConfig {
                     .hasAuthority(ROLE_READ)
                     .pathMatchers("/api/roles/users/**")
                     .hasAuthority(USER_ROLE_ASSIGN)
-                    // The realm's roles
+                    // The permission list and the role/permission matrix
+                    .pathMatchers(HttpMethod.GET, "/api/permissions", "/api/permissions/**")
+                    .hasAuthority(ROLE_READ)
+                    // The realm's roles, and each role's permissions (GET/PUT .../permissions)
                     .pathMatchers(HttpMethod.GET, "/api/roles", "/api/roles/**")
                     .hasAuthority(ROLE_READ)
                     .pathMatchers("/api/roles", "/api/roles/**")

@@ -11,7 +11,9 @@ import com.neo.common.security.DwellPermissions;
 import com.neo.common.security.KeycloakRoleConverter;
 import com.neo.common.security.autoconfigure.DwellSecurityAutoConfiguration;
 import com.neo.controller.RoleController;
+import com.neo.controller.RolePermissionController;
 import com.neo.controller.UserController;
+import com.neo.service.RolePermissionService;
 import com.neo.service.RoleService;
 import com.neo.service.UserAdminService;
 import java.util.List;
@@ -32,7 +34,8 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /** identity's permission rules with the real filter chain (gateway secret off for this test). */
-@WebFluxTest(controllers = {RoleController.class, UserController.class})
+@WebFluxTest(
+    controllers = {RoleController.class, UserController.class, RolePermissionController.class})
 @Import(SecurityConfig.class)
 @ImportAutoConfiguration(DwellSecurityAutoConfiguration.class)
 @TestPropertySource(properties = "app.gateway-auth.enabled=false")
@@ -44,6 +47,7 @@ class SecurityConfigTest {
   @Autowired private WebTestClient client;
   @MockitoBean private RoleService roleService;
   @MockitoBean private UserAdminService userAdminService;
+  @MockitoBean private RolePermissionService rolePermissionService;
 
   @BeforeEach
   void stubServices() {
@@ -54,6 +58,10 @@ class SecurityConfigTest {
     when(roleService.removeRolesFromUser(anyString(), anyList())).thenReturn(Mono.empty());
     when(roleService.getUserRoles(anyString())).thenReturn(Mono.empty());
     when(userAdminService.setActive(anyString(), anyBoolean())).thenReturn(Mono.empty());
+    when(rolePermissionService.getPermissions()).thenReturn(Flux.empty());
+    when(rolePermissionService.getMatrix()).thenReturn(Mono.empty());
+    when(rolePermissionService.getRolePermissions(anyString())).thenReturn(Mono.empty());
+    when(rolePermissionService.setRolePermissions(anyString(), anyList())).thenReturn(Mono.empty());
   }
 
   /** Realm role ADMIN (never enough on its own) plus these dwell-api permissions. */
@@ -128,6 +136,26 @@ class SecurityConfigTest {
     String path = "/api/users/0b4f7c1e-0000-0000-0000-000000000001/deactivate";
     call(user("user:manage"), HttpMethod.POST, path, null).expectStatus().isOk();
     call(user("role:write", "user-role:assign"), HttpMethod.POST, path, null)
+        .expectStatus()
+        .isForbidden();
+  }
+
+  @Test
+  void roleReadSeesPermissionsAndTheMatrixButCannotTickThem() {
+    String ticks = "{\"permissions\":[\"product:write\"]}";
+    call(user("role:read"), HttpMethod.GET, "/api/permissions", null).expectStatus().isOk();
+    call(user("role:read"), HttpMethod.GET, "/api/permissions/matrix", null).expectStatus().isOk();
+    call(user("role:read"), HttpMethod.GET, "/api/roles/backend/permissions", null)
+        .expectStatus()
+        .isOk();
+    call(user("role:read"), HttpMethod.PUT, "/api/roles/backend/permissions", ticks)
+        .expectStatus()
+        .isForbidden();
+    call(user("role:write"), HttpMethod.PUT, "/api/roles/backend/permissions", ticks)
+        .expectStatus()
+        .isOk();
+    // Ticking is role:write, not assigning roles to users
+    call(user("user-role:assign"), HttpMethod.PUT, "/api/roles/backend/permissions", ticks)
         .expectStatus()
         .isForbidden();
   }

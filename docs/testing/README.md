@@ -7,9 +7,9 @@ This guide explains how the tests are built and how each test works: what it set
 | common-logging | 57 | [common-logging.md](common-logging.md) |
 | common-security | 24 | [common-security.md](common-security.md) |
 | api-gateway | 22 | [api-gateway.md](api-gateway.md) |
-| identity | 52 | [identity.md](identity.md) |
+| identity | 73 | [identity.md](identity.md) |
 | product-catalog | 164 | [product-catalog.md](product-catalog.md) |
-| **Total** | **319** | |
+| **Total** | **340** | |
 
 ## Running the tests
 

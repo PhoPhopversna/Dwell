@@ -9,7 +9,7 @@ Start here. This page explains how the system fits together and how to run it. E
 | [product-catalog](services/product-catalog.md) | Categories, attributes, products, variants, images (MinIO), Kafka image events |
 | [common-logging](services/common-logging.md) | Shared JSON logging, correlation id, masking (used by all three services) |
 | [common-security](services/common-security.md) | Shared JWT validation (Keycloak) and gateway-secret check (used by all three services) |
-| [Testing guide](testing/README.md) | How the tests are built, and what each of the 319 tests sets up, does and checks |
+| [Testing guide](testing/README.md) | How the tests are built, and what each of the 340 tests sets up, does and checks |
 | [LOGGING.md](LOGGING.md) | Logging, Loki and Grafana, and the error-handling rules in depth |
 | [WebclientUsage.md](WebclientUsage.md) | Calling another service so the correlation id is forwarded |
 
@@ -47,22 +47,21 @@ all services ──JSON log files──▶ Grafana Alloy ──▶ Loki :3100 �
 | What | Port | Notes |
 |---|---|---|
 | PostgreSQL (services) | 5432 | Databases `gateway`, `identity`, `product-catalog`; user `tixly-ticket` |
-| Keycloak + its Postgres | 8080 (+5438) | Realm `Dwell`, clients `dwell-client` (logins) and `dwell-admin` (identity's admin calls) |
+| Keycloak 26.8.2 + its Postgres | 8080 (+5438) | Realm `Dwell`, clients `dwell-client` (logins) and `dwell-admin` (identity's admin calls) |
 | Redis | 6379 | Rate limits (gateway), Keycloak admin token cache (identity) |
 | Kafka (KRaft) | 9092 | Image events |
 | MinIO | 9000 (console 9001) | Bucket `images` |
 | Loki / Alloy / Grafana | 3100 / 12345 / 3001 | Optional: centralized logs |
 
-> **Not in git yet:** the Docker Compose files (`docker/infra`, `docker/observability`), the scripts (`scripts/dwell.sh`, `scripts/keycloak-permissions.py`) and the Postman collection (`postman/`) are excluded by `.gitignore`. Ask the team for copies until they are committed.
-
-With the files in place:
+> The Postman collection (`postman/`) is still excluded by `.gitignore`; the Docker Compose files and `scripts/dwell.sh` are in git.
 
 ```bash
-cd docker/infra && docker compose up -d            # Keycloak, Postgres, Redis, Kafka, MinIO
-cd docker/observability && docker compose up -d    # Loki, Alloy, Grafana (optional)
+cp -n docker/infra/.env.example docker/infra/.env              # first time only (-n: never overwrites)
+(cd docker/infra && docker compose up -d)          # Keycloak (set up by keycloak-init), Postgres, Redis, Kafka, MinIO
+(cd docker/observability && docker compose up -d)  # Loki, Alloy, Grafana (optional)
 ```
 
-**First time:** set up the realm, both clients and the first admin with [Keycloak first-time setup](keycloak-setup.md), and put the two client secrets in `.env`. identity won't start without them.
+**First time:** nothing to set up in Keycloak. The `keycloak-init` service creates the realm, roles and clients (with secrets matching identity's local defaults), identity creates the permissions and, with the `local` profile, the admin `dwell_admin`. Fill in `MINIO_ROOT_PASSWORD` in `docker/infra/.env`. Details and other environments: [Keycloak setup](keycloak-setup.md#automatic-setup-keycloak-init).
 
 ### 2. Services
 
@@ -86,6 +85,7 @@ Routes are **data**, not code: they live in the gateway's `routes` table and are
 | `/identity/api/auth/**` | any | `PUBLIC` | identity |
 | `/identity/api/roles/**` | any | `role:read,role:write,user-role:assign` | identity (checks the exact one per endpoint) |
 | `/identity/api/users/**` | any | `user:manage` | identity |
+| `/identity/api/permissions/**` | GET | `role:read` | identity (permission list, role/permission matrix) |
 | `/api/categories/**` | GET | `category:read` | product-catalog |
 | `/api/categories/**` | any | `category:write` | product-catalog |
 | `/api/v1/products/**` | GET | `product:read` | product-catalog |
@@ -108,7 +108,7 @@ mvn -pl identity test -Dtest=UserServiceImplTest
 | common-logging | 57 | Unit tests + Spring Boot auto-configuration tests |
 | common-security | 24 | Unit tests with real signed JWTs + auto-configuration tests |
 | api-gateway | 22 | Unit tests |
-| identity | 52 | Unit tests (Keycloak and the database are mocked) |
+| identity | 73 | Unit tests (Keycloak and the database are mocked) |
 | product-catalog | 164 | Unit tests, `@WebMvcTest` controller tests, `@DataJpaTest` on a real PostgreSQL (Testcontainers) |
 
 How each test works: [testing guide](testing/README.md).
