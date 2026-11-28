@@ -1,0 +1,18 @@
+apiVersion: 1
+
+datasources:
+  - name: Loki
+    uid: dwell-loki
+    type: loki
+    access: proxy
+    url: ${LOKI_QUERY_URL}
+    isDefault: true
+    jsonData:
+      maxLines: 5000
+      # Click a correlationId in a log line to see every log of that request, across services
+      derivedFields:
+        - name: correlationId
+          matcherRegex: '"correlationId":"([^"]+)"'
+          datasourceUid: dwell-loki
+          url: '{service_name=~".+"} | json | correlationId="$${__value.raw}"'
+          urlDisplayLabel: Trace this request across all services

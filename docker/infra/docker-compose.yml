@@ -1,0 +1,149 @@
+# Backing infrastructure for local Dwell development: Keycloak (+ its Postgres), Redis, Kafka.
+#
+#   cd docker/infra && docker compose up -d
+#
+# keycloak-init then sets Keycloak up for Dwell (realm, roles, clients) and exits; identity creates
+# the permissions when it starts. Nothing to click in the Keycloak console.
+#
+# The Dwell services run on the host and reach these on localhost:
+#   Keycloak  :8080  identity + api-gateway (realm "Dwell")
+#   Redis     :6379  api-gateway rate limiter, identity
+#   Kafka     :9092  product-catalog
+#   Postgres  :5438  Keycloak's own database only. The service databases (gateway, identity,
+#                    product-catalog) are on the host Postgres at :5432, which is why this one is
+#                    published on 5438.
+#
+# Works with both `docker compose` (v2) and the legacy `docker-compose` (v1.27+), hence the
+# version key and no top-level `name:` (v1 rejects it).
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: keycloak
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5438:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak -d keycloak"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+
+  keycloak:
+    # 26.8.2: fine-grained admin permissions v2 (identity ticks role permissions with them)
+    image: quay.io/keycloak/keycloak:26.8.2
+    command: ["start-dev"]
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloak
+      # Bootstrap admin of the master realm (Keycloak 26 renamed KEYCLOAK_ADMIN*). Only used when
+      # the master realm is first created; keycloak-init signs in with the same values.
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_ADMIN_USER:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD:-admin}
+      # /health/ready on the management port 9000 (inside the container only)
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      # The image has no curl: plain HTTP over bash's /dev/tcp
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /health/ready HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q '\"UP\"' <&3"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 20s
+    restart: unless-stopped
+
+  keycloak-init:
+    # One-shot: sets up the Dwell realm, roles, clients and identity's admin rights, then exits.
+    # Runs on every `up` and only adds what's missing (see docs/keycloak-setup.md).
+    #   docker compose logs keycloak-init           what it did
+    #   docker compose up --build keycloak-init     after changing setup.sh
+    build: ./keycloak-init
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    environment:
+      KC_URL: http://keycloak:8080
+      KC_ADMIN_USER: ${KC_ADMIN_USER:-admin}
+      KC_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD:-admin}
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-Dwell}
+      # The client secrets identity uses. Defaults = identity's local dev defaults
+      # (application.yml / application-local.yml), so a fresh Keycloak works with identity as is.
+      # Anywhere else set your own in .env: Keycloak is updated to match (that's how you rotate).
+      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:-1dKFNJe5JGkrx3NcOQo9I1k7WBflDgh3}
+      KEYCLOAK_SERVICE_CLIENT_SECRET: ${KEYCLOAK_SERVICE_CLIENT_SECRET:-gvExtrVp0SbQzCQcdRQtA8V86ttBpcgk}
+    restart: "no"
+
+  kafka:
+    # bitnamilegacy is Bitnami's frozen archive: it gets no more updates. 4.0.0 is what "latest"
+    # points to there; pinned so a re-pull can't change the broker under us.
+    image: bitnamilegacy/kafka:4.0.0
+    ports:
+      - "9092:9092"
+    environment:
+      # KRaft (no ZooKeeper)
+      - KAFKA_CFG_NODE_ID=1
+      - KAFKA_CFG_PROCESS_ROLES=broker,controller
+      - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=1@kafka:9093
+
+      # Listeners. Advertised as localhost because the clients run on the host.
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://localhost:9092
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+      - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
+
+      # Single broker
+      - KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE=true
+      - KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR=1
+      - KAFKA_CFG_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1
+      - KAFKA_CFG_TRANSACTION_STATE_LOG_MIN_ISR=1
+    volumes:
+      - kafka_data:/bitnami/kafka
+    restart: unless-stopped
+
+  minio:
+    # MinIO no longer publishes versioned images publicly; this is the image already in use.
+    image: quay.io/minio/minio:latest
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      # Must stay the same as the data dir was created with: product-catalog's access key
+      # (minio.access-key) is a service account owned by this root user.
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in docker/infra/.env}
+    ports:
+      - "9000:9000" # S3 API (product-catalog minio.url)
+      - "9001:9001" # web console
+    volumes:
+      # Host folder with the existing buckets (images) and keys. Set in .env.
+      - ${MINIO_DATA_DIR:-./minio-data}:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+# Fixed names (kept from the earlier standalone setup, compose project "keycloak"): an existing
+# volume is reused, a missing one is created, so a fresh clone needs no manual step.
+volumes:
+  pgdata:
+    name: keycloak_pgdata
+  kafka_data:
+    name: keycloak_kafka_data

@@ -22,7 +22,7 @@ A service fails to start if `issuer-uri` is missing, so it can't run without the
 
 ## Roles and permissions
 
-**Dwell checks permissions, not roles.** A permission is a client role of the Keycloak client `dwell-api`; the realm roles `ADMIN` and `CUSTOMER` are composite roles that bundle permissions (setup: [Keycloak setup, step 3](../keycloak-setup.md#3-create-the-permissions-and-the-roles-that-bundle-them)). Keycloak expands the bundle when it issues the token, so the token lists the user's actual permissions.
+**Dwell checks permissions, not roles.** A permission is a client role of the Keycloak client `dwell-api`; the realm roles `ADMIN` and `CUSTOMER` are composite roles that bundle permissions (setup: [Keycloak setup, step 3](../keycloak-setup.md#3-create-the-permission-client-and-the-roles)). Keycloak expands the bundle when it issues the token, so the token lists the user's actual permissions.
 
 `KeycloakRoleConverter` turns the token into Spring authorities:
 
@@ -42,6 +42,27 @@ Client roles are only read from `app.security.jwt.permission-client` (default `d
 | `route:manage` | gateway (`/api/routes`) |
 
 A user without the permission gets 403, whatever realm role they have.
+
+**Roles are yours to define.** The permission list belongs to the system (each permission matches something the code checks), but which role bundles which permissions is data: admins create roles and tick permissions through identity's API ([identity → Roles and permissions](identity.md#roles-and-permissions)), like Jenkins' role strategy.
+
+### Adding a service or a permission
+
+There's no Keycloak step: identity creates missing permissions in Keycloak at startup (`KeycloakPermissionSync`).
+
+1. **Name it** in `DwellPermissions`: a constant plus a line in `DESCRIPTIONS` (the description shows in the matrix).
+   ```java
+   public static final String ORDER_READ = "order:read";
+   d.put(ORDER_READ, "Read orders");
+   ```
+2. **Use it** in the service's `SecurityConfig` (a new service: add the `common-security` dependency and its settings, see [Using it in a service](#using-it-in-a-service)):
+   ```java
+   .requestMatchers(HttpMethod.GET, "/api/orders/**").hasAuthority(DwellPermissions.ORDER_READ)
+   ```
+3. **Deploy identity** with the new `common-security`. On startup it creates `order:read` in Keycloak, puts it in the token scope (through the `permission-scope` holder) and gives it to the roles in `app.keycloak.permission-sync.initial-grants` (by default `ADMIN`). Its log says `Keycloak permissions synced: created [order:read] ...`.
+4. **Add the gateway route** (`POST /api/routes` with `"permissions": ["order:read"]`): routes are data, per environment.
+5. **Tick it** on roles in the matrix (`/portal/auth/permissions`) for everyone else who needs it.
+
+identity never deletes or renames a permission: removing one from the code leaves it in Keycloak (harmless; delete it there if you want). A permission created by hand in the `dwell-api` client also reaches tokens: identity bundles every `dwell-api` role into the holder.
 
 The user's name (`Authentication#getName`, used in logs) is the `preferred_username` claim.
 
@@ -106,7 +127,7 @@ The service rules repeat the gateway's route permissions on purpose. If a route 
 
 | Package | Main classes |
 |---|---|
-| `com.neo.common.security` | `DwellPermissions` (permission names), `KeycloakRoleConverter`, `AuthorizedPartyValidator`, `DwellJwt` (validator + converter), `DwellJwtProperties`, `GatewayAuthProperties`, `GatewaySecretCheck` |
+| `com.neo.common.security` | `DwellPermissions` (permission names and descriptions; `SCOPE_ROLE` holder name), `KeycloakRoleConverter`, `AuthorizedPartyValidator`, `DwellJwt` (validator + converter), `DwellJwtProperties`, `GatewayAuthProperties`, `GatewaySecretCheck` |
 | `reactive` | `GatewayAuthWebFilter`, `ReactiveSecurityErrors` |
 | `servlet` | `GatewayAuthServletFilter`, `ServletSecurityErrors` |
 | `autoconfigure` | `DwellSecurityAutoConfiguration` |

@@ -32,6 +32,25 @@ Paths as the client calls them through the gateway (identity itself serves them 
 
 `user-role:assign` can give any role, including `ADMIN`, so treat it like admin power: only bundle it into roles you'd trust with that.
 
+### Roles and permissions
+
+Roles work like Jenkins' role strategy: **the system defines the permissions, you define the roles.** Create any role (`POST /identity/api/roles`), tick its permissions here, and give it to users. Nothing about roles is fixed in code: `ADMIN` and `CUSTOMER` are just the roles that ship pre-ticked.
+
+| Method | Path | Permission | What it does |
+|---|---|---|---|
+| GET | `/identity/api/permissions` | `role:read` | Every permission (`name`, `description`): the columns of a role/permission screen |
+| GET | `/identity/api/permissions/matrix` | `role:read` | Every role with its ticked permissions, plus every permission, in one call |
+| GET | `/identity/api/roles/{roleName}/permissions` | `role:read` | One role's ticked permissions |
+| PUT | `/identity/api/roles/{roleName}/permissions` | `role:write` | Replace the role's ticks: body `{"permissions": [...]}` is the **complete** list (`[]` removes all); identity adds and removes the difference |
+
+- **Permissions** are the client roles of `dwell-api` (`DwellPermissions` lists the ones the services check). A permission name that doesn't exist → 400, and nothing changes.
+- **When it takes effect:** a user's permissions are in their token, so they change on the next login or token refresh (at most the access-token lifetime).
+- **Lockout guard:** you can't untick `role:write` from a role you have yourself (409): with nobody left who can change roles, only the Keycloak console could undo it. Ask another admin.
+- **`role:write` is admin power too:** whoever has it can tick any permission onto a role, including their own.
+- **Audit:** every change writes `ROLE_PERMISSIONS` (who, role, added, removed) to `user_log_audit`.
+- **The matrix** leaves out Keycloak's own roles (`offline_access`, `uma_authorization`, `default-roles-dwell`) and shows the permissions a role bundles directly.
+- **Keycloak side:** identity's admin client may only add and remove `dwell-api` roles on roles (fine-grained admin permissions, [setup step 5.6](../keycloak-setup.md#5-create-dwell-admin-identitys-admin-calls)); it can't hand out admin roles or change clients.
+
 ### Users
 
 | Method | Path | Permission | What it does |
@@ -48,14 +67,18 @@ Paths as the client calls them through the gateway (identity itself serves them 
 ```
 1. app_user already has this username or email?   → 409, Keycloak is not touched
 2. create the user in Keycloak (admin API)         → 409 if Keycloak already has it
-3. save the app_user row (created_by = SELF_REGISTER unless the request sets created_by)
-4. step 3 failed?  → delete the Keycloak user again (audit REGISTER_ROLLBACK) and return the error
-                     if that delete also fails: ERROR log + audit REGISTER_ROLLBACK_FAILED
+3. give the user the default roles                 → app.registration.default-roles, default [CUSTOMER]
+4. save the app_user row (created_by = SELF_REGISTER unless the request sets created_by)
+5. step 3 or 4 failed? → delete the Keycloak user again (audit REGISTER_ROLLBACK) and return the error
+                         if that delete also fails: ERROR log + audit REGISTER_ROLLBACK_FAILED
 ```
 
-So a user can't be left half-created: in Keycloak but missing from `app_user`.
+So a user can't be left half-created: in Keycloak but without their role, or missing from `app_user`.
 
-> **Note:** a new user gets **no application role**. Until an admin assigns `CUSTOMER` (`/roles/users/{id}/assign`), every catalog call returns 403. Also, Keycloak refuses to log in a user without a first and last name ("Account is not fully set up"), so always send `first_name` and `last_name`.
+- **Default role:** someone who registers can use the catalog straight away. `CUSTOMER` bundles `category:read` and `product:read`; no admin step is needed. Set `app.registration.default-roles: []` to give no role (an admin then assigns one), or list other realm roles. Only registration does this: users created in the Keycloak console get no role automatically.
+- **Role assignment fails** (e.g. the role doesn't exist in Keycloak): the caller gets a general 503 and the cause is logged as an ERROR (`Could not give new user ... the registration roles ...`). The Keycloak user is deleted again, so the person can simply try later.
+
+> **Note:** Keycloak refuses to log in a user without a first and last name ("Account is not fully set up"), so always send `first_name` and `last_name`.
 
 ### Login and refresh
 
@@ -94,9 +117,19 @@ Admin calls (create, delete or disable users, manage roles) use the **`dwell-adm
 
 With `BOOTSTRAP_ENABLED=true`, or the `local` profile (`application-local.yml`), identity creates at startup:
 - the realm roles `ADMIN` and `CUSTOMER`;
-- the admin user, assigned `ADMIN` (local: `dwell_admin` / `Admin@12345`).
+- the admin user, assigned `ADMIN` (local: `dwell_admin` / `Admin@12345`). It's created through the normal register flow, so it also gets the registration default roles (`CUSTOMER`); that's harmless, since `ADMIN` already bundles every permission.
 
 It's idempotent and never changes an existing password. It retries 3 times if Keycloak is still starting, and a failure never stops the service. Keep it **off in production**.
+
+### Permission sync (every startup)
+
+identity makes Keycloak match the code's permission list (`DwellPermissions`), so a new permission needs no Keycloak step in any environment (`KeycloakPermissionSync`, after the bootstrap):
+
+1. creates the holder role `permission-scope` and every missing permission, with its description;
+2. bundles **every** `dwell-api` role into the holder (also ones made by hand), so they all reach tokens: the holder is in `dwell-client`'s scope;
+3. gives a permission it just created to the roles in `app.keycloak.permission-sync.initial-grants` (default `ADMIN: ["*"]`, `CUSTOMER: [category:read, product:read]`). Only at creation: an untick in the matrix stays.
+
+Log: `Keycloak permissions synced: created [...], added to token scope [...]` when something changed, then `Keycloak permissions check passed (n permissions)` or a WARN naming what's missing. It never deletes or renames anything, never changes `dwell-client`, and never stops startup. `KEYCLOAK_PERMISSION_SYNC=false` makes it report only. Keycloak side: [setup step 5.6](../keycloak-setup.md#5-create-dwell-admin-identitys-admin-calls) (`manage` on `dwell-api`).
 
 ## Data
 
@@ -134,6 +167,8 @@ The client only gets a general message per status (`Invalid request`, `Authentic
 | `GATEWAY_SECRET` | `dwell-dev-gateway-secret` | Must match the gateway |
 | `GATEWAY_AUTH_ENABLED` | `true` | Turn the gateway-only check off (tests only) |
 | `KEYCLOAK_ISSUER` | `http://localhost:8080/realms/Dwell` | Tokens' `iss`; with `KEYCLOAK_URL`/`KEYCLOAK_REALM` for the realm's keys. See [common-security](common-security.md#configuration) |
+| `KEYCLOAK_PERMISSION_SYNC`, `app.keycloak.permission-sync.initial-grants` | `true`, `ADMIN: ["*"]`, `CUSTOMER: [category:read, product:read]` | Startup permission sync and which roles get a newly created permission |
+| `app.registration.default-roles` | `[CUSTOMER]` | Realm roles a self-registered user gets; `[]` = none |
 | `BOOTSTRAP_ENABLED`, `BOOTSTRAP_ADMIN_USERNAME`, `BOOTSTRAP_ADMIN_EMAIL`, `BOOTSTRAP_ADMIN_PASSWORD` | off | First admin |
 | `webclient.timeout.*` | connect 5s, response 7s | Keycloak calls |
 | `REDIS_HOST`, `REDIS_PORT` | localhost:6379 | Admin token cache |
@@ -142,14 +177,14 @@ The client only gets a general message per status (`Invalid request`, `Authentic
 
 | Package | Main classes |
 |---|---|
-| `controller` | `AuthController`, `RoleController`, `UserController` |
-| `service.impl` | `KeycloakAuthServiceImpl` (register/login/refresh/logout), `UserServiceImpl` (`app_user` sync, audit), `UserAdminServiceImpl` (activate/deactivate), `RoleServiceImpl`, `KeycloakAdminServiceImpl` (admin token + Redis), `KeycloakGenericConnector` (HTTP calls + Keycloak error mapping) |
-| `bootstrap` | `AdminBootstrap`, `BootstrapProperties`, `KeycloakRealmSecurityCheck` (startup security check) |
-| `config` | `SecurityConfig` (JWT + ADMIN rules; gateway secret and token checks come from [common-security](common-security.md)), `WebClientConfig`, `DatabaseConfig`, `LoggingConfig` |
+| `controller` | `AuthController`, `RoleController`, `RolePermissionController` (permissions, matrix, ticking), `UserController` |
+| `service.impl` | `KeycloakAuthServiceImpl` (register/login/refresh/logout), `UserServiceImpl` (`app_user` sync, audit), `UserAdminServiceImpl` (activate/deactivate), `RoleServiceImpl`, `RolePermissionServiceImpl` (roles as bundles of permissions), `KeycloakAdminServiceImpl` (admin token + Redis), `KeycloakGenericConnector` (HTTP calls + Keycloak error mapping) |
+| `bootstrap` | `AdminBootstrap`, `BootstrapProperties`, `KeycloakRealmSecurityCheck` (startup security check), `KeycloakPermissionSync` (creates missing permissions at startup), `PermissionSyncProperties` |
+| `config` | `SecurityConfig` (JWT + permission rules; gateway secret and token checks come from [common-security](common-security.md)), `WebClientConfig`, `DatabaseConfig`, `LoggingConfig` |
 | `dto` | Requests and responses; `TokenClaims` reads `sub`, username, email and names from a token |
 | `exception` | `GlobalExceptionHandler`, `AuthException`, `ConflictException` |
 
-## Tests (52)
+## Tests (73)
 
 For how each test works (setup, action and checks), see [testing/identity.md](../testing/identity.md).
 
@@ -157,6 +192,8 @@ Run with `mvn -pl identity test`. All are unit tests: Keycloak is replaced by a 
 
 **`KeycloakAuthServiceImplTest`**: register and login flows.
 - A local duplicate is rejected before Keycloak is called.
+- A self-registered user gets `CUSTOMER` before the local row is saved; the configured roles are used, and an empty list assigns none.
+- A failed role assignment deletes the Keycloak user and gives a general 503; no local row is written.
 - A failed local save deletes the Keycloak user; if that delete fails too, it's audited and the original error is kept.
 - Login returns tokens only once the local user is in sync.
 - A refused login (e.g. an inactive user) revokes the new Keycloak session.
@@ -192,6 +229,19 @@ Run with `mvn -pl identity test`. All are unit tests: Keycloak is replaced by a 
 **`SecurityConfigTest`**: the permission rules, through the real filter chain.
 - No token → 401; a realm role without permissions → 403.
 - `role:read` reads roles but changes nothing; `role:write` creates and deletes roles but can't assign them; `user-role:assign` assigns and removes but can't delete roles (`DELETE /api/roles/users/...` is never treated as deleting a role named `users`); `user:manage` activates and deactivates.
+- `role:read` sees the permission list, the matrix and a role's ticks; ticking needs `role:write` (not `user-role:assign`).
+
+**`RolePermissionServiceImplTest`**: ticking permissions on roles.
+- Ticking adds what's missing and removes the rest (one Keycloak call each), and is audited with who, added and removed.
+- The same ticks change nothing; an unknown permission → 400 with nothing changed; an unknown role → 404.
+- You can't untick `role:write` from a role you have; someone without that role can.
+- The matrix shows every business role (not Keycloak's built-ins) and every permission; the `permission-scope` holder is never listed or tickable.
+
+**`KeycloakPermissionSyncTest`**: creating permissions at startup.
+- A new Keycloak gets every permission, the holder filled, and the initial grants (`ADMIN` all, `CUSTOMER` the two reads); one in sync isn't written to.
+- A permission new in the code is created and granted alone; an earlier untick stays unticked.
+- A permission created by hand reaches tokens (holder) but is granted to nobody.
+- A holder missing from `dwell-client`'s scope is reported (older setups listing every permission pass); switched off, it only reports; a missing grant role is reported and the rest goes on; a 403 names the missing right.
 
 **`KeycloakPropertiesTest`**: the admin service client.
 - Startup fails without a service client, or if it is the login client.
@@ -242,5 +292,4 @@ It only reads; it never changes Keycloak or stops startup. If Keycloak can't be 
 ## Known issues
 
 - **The `dwell-client` secret's default value is committed** in `application.yml`. Once `dwell-admin` is in use and `dwell-client`'s service account is off, that secret no longer gives admin access, but set `KEYCLOAK_CLIENT_SECRET` in every non-local environment and rotate it anyway.
-- **New users have no application role,** so they get 403 on the catalog until an admin assigns `CUSTOMER`. To change this, add `CUSTOMER` to the realm's default roles.
 - **`created_by` can be set by any client** on the public register endpoint.

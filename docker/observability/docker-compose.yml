@@ -1,0 +1,76 @@
+# Centralized logging for Dwell: Loki (storage/query) + Grafana Alloy (log shipper) + Grafana (UI).
+#
+#   cd docker/observability && cp .env.example .env && docker compose up -d
+#
+# The services write JSON logs to ${DWELL_LOG_DIR}/<service>.log. Alloy tails those files and
+# pushes them to Loki. The services never talk to Loki directly, so Loki being down never affects
+# them: Alloy keeps its file positions and retries until Loki is back.
+version: "3.9"
+
+services:
+  loki:
+    image: grafana/loki:${LOKI_VERSION:-3.4.3}
+    command: ["-config.file=/etc/loki/loki-config.yaml", "-config.expand-env=true"]
+    environment:
+      LOKI_RETENTION_PERIOD: ${LOKI_RETENTION_PERIOD:-168h}
+      LOKI_INGESTION_RATE_MB: ${LOKI_INGESTION_RATE_MB:-8}
+      LOKI_INGESTION_BURST_MB: ${LOKI_INGESTION_BURST_MB:-16}
+    ports:
+      - "${LOKI_PORT:-3100}:3100"
+    volumes:
+      - ./loki/loki-config.yaml:/etc/loki/loki-config.yaml:ro
+      - loki-data:/loki
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3100/ready | grep -q ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  alloy:
+    image: grafana/alloy:${ALLOY_VERSION:-v1.8.3}
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/config.alloy
+    environment:
+      LOKI_PUSH_URL: ${LOKI_PUSH_URL:-http://loki:3100/loki/api/v1/push}
+      DWELL_ENV_DEFAULT: ${DWELL_ENV_DEFAULT:-local}
+    ports:
+      - "${ALLOY_UI_PORT:-12345}:12345"
+    volumes:
+      - ./alloy/config.alloy:/etc/alloy/config.alloy:ro
+      # Where the Dwell services write their JSON log files (repo-root ./logs by default)
+      - ${DWELL_LOG_DIR:-../../logs}:/var/log/dwell:ro
+      # File positions + buffered state survive restarts (no duplicates, no gaps)
+      - alloy-data:/var/lib/alloy/data
+    # Alloy keeps tailing and buffering while Loki is starting or down
+    depends_on:
+      - loki
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:${GRAFANA_VERSION:-11.6.1}
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      LOKI_QUERY_URL: ${LOKI_QUERY_URL:-http://loki:3100}
+    ports:
+      - "${GRAFANA_PORT:-3001}:3000"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      loki:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  loki-data:
+  alloy-data:
+  grafana-data:

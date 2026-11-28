@@ -1,0 +1,66 @@
+// Grafana Alloy: tail the Dwell services' JSON log files and ship them to Loki.
+//
+// Labels (low cardinality, used to select streams): service_name, environment, level.
+// Everything else - correlationId, method, path, status, durationMs, exception - stays in the
+// JSON line and is filtered in LogQL with `| json | correlationId="..."`.
+
+local.file_match "dwell" {
+  // <service>.log only; rotated .gz archives are skipped
+  path_targets = [{"__path__" = "/var/log/dwell/*.log"}]
+  sync_period  = "5s"
+}
+
+loki.source.file "dwell" {
+  targets    = local.file_match.dwell.targets
+  forward_to = [loki.process.dwell.receiver]
+}
+
+loki.process "dwell" {
+  stage.json {
+    expressions = {
+      level        = "level",
+      service_name = "service",
+      environment  = "environment",
+      ts           = "timestamp",
+    }
+  }
+
+  // Use the application's own timestamp, not the time Alloy read the line
+  stage.timestamp {
+    source = "ts"
+    format = "RFC3339"
+  }
+
+  // Lines that are not JSON (should not happen) still get a sane environment label
+  stage.template {
+    source   = "environment"
+    template = "{{ if .Value }}{{ .Value }}{{ else }}" + sys.env("DWELL_ENV_DEFAULT") + "{{ end }}"
+  }
+
+  stage.labels {
+    values = {
+      level        = "",
+      service_name = "",
+      environment  = "",
+    }
+  }
+
+  // The file path is redundant with service_name
+  stage.label_drop {
+    values = ["filename"]
+  }
+
+  forward_to = [loki.write.default.receiver]
+}
+
+loki.write "default" {
+  endpoint {
+    url = sys.env("LOKI_PUSH_URL")
+
+    // While Loki is down, keep retrying with backoff (up to ~1h) instead of dropping logs.
+    min_backoff_period  = "500ms"
+    max_backoff_period  = "1m"
+    max_backoff_retries = 60
+    retry_on_http_429   = true
+  }
+}
